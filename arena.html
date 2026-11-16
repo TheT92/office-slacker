@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>摸鱼大作战 · 一起来摸鱼</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #EFE4D4; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* 手机横屏：避开刘海和底部手势区 */
+  body { display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  canvas { display: block; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  /* 手机竖屏时提示横过来 */
+  #rotate { display: none; position: fixed; inset: 0; background: #FFF4E2; color: #3D2B1F; font: bold 20px "PingFang SC","Microsoft YaHei",sans-serif; align-items: center; justify-content: center; text-align: center; flex-direction: column; gap: 12px; z-index: 9; }
+  #rotate b { font-size: 46px; display: block; }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<canvas id="arena" width="960" height="540"></canvas>
+<div id="rotate"><b>⟳</b>请把手机横过来玩</div>
+<!-- 普通 script 标签，双击本文件即可运行 -->
+<script src="src/render/theme.js"></script>
+<script src="src/render/sprites.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/arena/config.js"></script>
+<script src="src/arena/path.js"></script>
+<script src="src/arena/bossai.js"></script>
+<script src="src/arena/empai.js"></script>
+<script src="src/arena/skills.js"></script>
+<script src="src/arena/supply.js"></script>
+<script src="src/arena/match.js"></script>
+<script src="src/arena/app.js"></script>
+<script src="src/arena/render.js"></script>
+<script src="src/arena/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一起来摸鱼</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #EFE4D4; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { max-width: 100vw; max-height: 100vh; background: #FFF8EE; border-radius: 12px; box-shadow: 0 6px 24px rgba(120,90,60,.18); touch-action: manipulation; }
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="640"></canvas>
+<!-- 普通 script 标签，双击本文件即可运行；加载顺序与 tests/helper.js 一致 -->
+<script src="src/config/balance.js"></script>
+<script src="src/config/map.js"></script>
+<script src="src/config/characters.js"></script>
+<script src="src/config/levels.js"></script>
+<script src="src/core/economy.js"></script>
+<script src="src/core/boss.js"></script>
+<script src="src/core/employee.js"></script>
+<script src="src/core/skills.js"></script>
+<script src="src/core/rules.js"></script>
+<script src="src/core/game.js"></script>
+<script src="src/core/progress.js"></script>
+<script src="src/core/lineup.js"></script>
+<script src="src/core/hints.js"></script>
+<script src="src/core/intro.js"></script>
+<script src="src/core/auto.js"></script>
+<script src="src/core/app.js"></script>
+<script src="src/render/theme.js"></script>
+<script src="src/render/sprites.js"></script>
+<script src="src/render/ui.js"></script>
+<script src="src/render/renderer.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/input.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>

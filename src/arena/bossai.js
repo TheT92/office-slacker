@@ -1,0 +1,146 @@
+// 摸鱼大作战：AI 老板。三档难度（A.DIFFICULTY）：
+// - 简单：查房完全随机，不看任何人（只在"现在能查"的房间里均匀随机挑）。
+// - 普通 / 困难：只用真人老板也看得到的信息——站在办公区时看得到员工走进了哪扇门，
+//   记下"谁进了哪间、进去多久了"，优先查"人多、待得久"的房间；自己在房间里时看不到外面，记录不更新；
+//   猫的替身会骗过它（看到"猫在工位"）。普通会记错一部分、偶尔随便挑；困难记得准、出手快、技能用得准。
+// 老板看不见房间里面：除了"监控"技能，从不读取房间里的真实人数。只通过和玩家相同的指令操作老板。
+(function (root) {
+  const OS = root.OS = root.OS || {};
+  const A = OS.arena = OS.arena || {};
+
+  // wrong：记错房间的概率；smart：按推算挑房间（否则随便挑）的概率；revisit：看到有人跟进刚查完的房间时放回马枪的概率
+  A.DIFFICULTY = {
+    // calm：冒犯值超过多少就先缓一缓；calmP：缓一缓的概率（越聪明越会控制冒犯值，避免被投诉）
+    // 2.0.0 用 tools/arena-sim.js 各跑 400 局调出（见 docs/DESIGN.md 平衡总表）
+    easy:   { name: '简单', track: false, idle: [3.5, 7], wrong: 0, smart: 0, revisit: 0.35, calm: 70, calmP: 0.6 },
+    normal: { name: '普通', track: true, idle: [1.1, 2.8], wrong: 0.15, smart: 0.9, revisit: 0.6, calm: 70, calmP: 0.7 },
+    hard:   { name: '困难', track: true, idle: [0.3, 1], wrong: 0, smart: 1, revisit: 0.95, calm: 55, calmP: 1 },
+  };
+  A.DIFFICULTY_IDS = ['easy', 'normal', 'hard'];
+
+  class BossAI {
+    constructor(match, rng, difficulty) {
+      this.m = match; this.rng = rng || match.rng; this.d = A.DIFFICULTY[difficulty] || A.DIFFICULTY.normal; this.level = difficulty || 'normal';
+      this.mode = 'idle'; this.t = this.idleTime(); this.target = null; this.wander = 0;
+      this.seen = {};     // 上次看到时每个员工在不在办公区
+      this.belief = {};   // 员工 id → { room（null = 不知道去了哪）, since }
+    }
+    rnd() { return this.rng(); }
+    idleTime() { const r = this.d.idle; return r[0] + this.rnd() * (r[1] - r[0]); }
+    officePoint() {
+      const g = this.m.grid, b = this.m.boss, list = g.cells.filter(k => !k.wall && !k.room && !k.door);
+      for (let i = 0; i < 12; i++) { const k = list[Math.floor(this.rnd() * list.length)]; if (this.m.canPass(b, k)) return { x: k.c + 0.5, y: k.r + 0.5 }; }
+      return null;
+    }
+    can(id) { const b = this.m.boss, S = A.BOSS_SKILLS[id]; return b.skills.includes(id) && !(b.skillCd[id] > 0) && b.anger >= S.cost && !(b.hr > 0); }
+    // 老板现在能不能看到办公区（在房间里 / 开局在办公室里看不到）
+    canWatch() { const b = this.m.boss; return !b.room && !(b.waitT > 0); }
+    // 在老板眼里，这个员工在不在办公区（猫的替身让它看起来在工位上）
+    looksPresent(e) { return !e.room || e.decoyT > 0; }
+    // 观察：只在看得到办公区时更新
+    observe() {
+      const m = this.m; if (!this.d.track || !this.canWatch()) return;
+      for (const e of m.employees()) {
+        const here = this.looksPresent(e), was = this.seen[e.id];
+        if (here) delete this.belief[e.id];
+        else if (was === true || was === undefined) {   // 刚刚（或在我看不到的时候）消失了
+          let room = was === true ? e.room : null;      // 亲眼看到走进哪扇门；回来时才发现不见了 = 不知道去了哪
+          if (room && this.rnd() < this.d.wrong) { const others = A.SLACK_ROOMS.filter(r => r !== room); room = others[Math.floor(this.rnd() * others.length)]; }   // 看错了
+          this.belief[e.id] = { room, since: m.time };
+        }
+        this.seen[e.id] = here;
+      }
+    }
+    // 从老板房间里出来后：之前看到的状态作废（这段时间看不到）
+    blind() { for (const id in this.seen) if (this.seen[id]) this.seen[id] = undefined; }
+    // 推算每个房间值多少：确定进去的人按待的时间加分（口袋越鼓越值），不知道去哪的平摊
+    scores() {
+      const m = this.m, s = {}; A.SLACK_ROOMS.forEach(r => (s[r] = 0.05));
+      for (const id in this.belief) {
+        const B = this.belief[id], w = 0.4 + Math.min(1, (m.time - B.since) / 12);
+        if (B.room) s[B.room] += w; else A.SLACK_ROOMS.forEach(r => (s[r] += w / 3));
+      }
+      return s;
+    }
+    // 查完一个房间：那间房的推算清零（抓到的人出来了；没人说明记错了）
+    checked(room) { for (const id in this.belief) if (this.belief[id].room === room) delete this.belief[id]; }
+    pick(open) {
+      if (!this.d.track || this.rnd() >= this.d.smart) return open[Math.floor(this.rnd() * open.length)];
+      const s = this.scores(); let best = open[0];
+      for (const r of open) if (s[r] > s[best] + 1e-9 || (Math.abs(s[r] - s[best]) < 1e-9 && this.rnd() < 0.5)) best = r;
+      return best;
+    }
+    think(dt) {
+      const m = this.m, b = m.boss;
+      if (m.phase !== 'playing') return;
+      if (b.room || b.waitT > 0) { if (!this.wasBlind) { this.wasBlind = true; } } else if (this.wasBlind) { this.wasBlind = false; this.blind(); }
+      this.observe();
+      if (b.hr > 0) { this.mode = 'idle'; this.t = this.idleTime(); return; }
+      if (b.freezeT > 0 || b.waitT > 0) return;   // 开局还没到 / 开会定身
+      if (this.mode === 'idle') {
+        this.t -= dt; this.wander -= dt;
+        if (!b.path.length && this.wander <= 0) { const p = this.officePoint(); if (p) m.pathTo(b, p.x, p.y); this.wander = 1 + this.rnd() * 2; }
+        const s = this.d.track ? this.scores() : null, hot = s && Math.max(...A.SLACK_ROOMS.map(r => s[r])) >= 1.2;
+        if (this.t > 0 && !(hot && this.level === 'hard')) return;   // 困难：看准了就立刻出手
+        if (b.offense > this.d.calm && this.rnd() < this.d.calmP && !(hot && b.offense < 85)) { this.t = 2 + this.rnd() * 2; return; }   // 怨气太大，先缓缓（看准有人时例外）
+        const missing = Object.keys(this.belief).length;
+        if (this.can('meeting') && (this.d.track ? missing >= 2 && this.rnd() < 0.5 : this.rnd() < 0.2) && m.useBossSkill('meeting')) { this.t = 1; return; }
+        let open = A.SLACK_ROOMS.filter(id => !m.entryBlock(b, id));
+        if (s && this.can('raid')) {   // 最值钱的房间在冷却中：突击检查
+          const best = A.SLACK_ROOMS.reduce((x, y) => (s[y] > s[x] ? y : x));
+          if (!open.includes(best) && s[best] >= 1.2 && m.useBossSkill('raid')) open = A.SLACK_ROOMS.filter(id => !m.entryBlock(b, id));
+        }
+        if (!open.length && this.can('raid') && m.useBossSkill('raid')) open = A.SLACK_ROOMS.filter(id => !m.entryBlock(b, id));
+        if (!open.length) { this.t = 1; return; }
+        if (open.length > 1 && this.can('peek') && (this.d.track ? (!s || Math.max(...open.map(r => s[r])) < 0.8) : this.rnd() < 0.6)) {   // 拿不准：先监控一间
+          const r = this.d.track ? this.pick(open) : open[Math.floor(this.rnd() * open.length)];
+          if (m.useBossSkill('peek', r)) {
+            const n = m.employees().filter(e => e.room === r).length;   // 监控：合法地看到房间里面
+            if (n) { open = [r]; m.employees().filter(e => e.room === r).forEach(e => (this.belief[e.id] = { room: r, since: Math.min(m.time, (this.belief[e.id] || {}).since || m.time) })); }
+            else { open = open.filter(x => x !== r); this.checked(r); }
+          }
+        }
+        this.target = this.pick(open);
+        const sc = s ? s[this.target] : 0;
+        if (this.can('fine') && (this.d.track ? sc >= 1.5 : b.anger >= 70)) m.useBossSkill('fine');
+        const cells = m.grid.roomCells(this.target), k = cells[Math.floor(this.rnd() * cells.length)];
+        if (m.pathTo(b, k.c + 0.5, k.r + 0.5)) { this.mode = 'go'; if (this.can('dash') && b.path.length > 2 && this.rnd() < (this.d.track ? 0.8 : 0.5)) m.useBossSkill('dash'); } else this.t = 1;
+        return;
+      }
+      if (this.mode === 'go') {
+        if (b.room === this.target) { this.checked(this.target); this.mode = 'inspect'; return; }
+        if (m.locks[this.target]) { b.path = []; this.mode = 'idle'; this.t = 0.5; return; }   // 门被锁了，换一个
+        if (!b.path.length) { this.mode = 'idle'; this.t = 0.5; }
+        return;
+      }
+      if (this.mode === 'inspect') {
+        if (b.stay > 0) return;
+        const o = m.grid.outside(b.room); m.pathTo(b, o.x, o.y); this.mode = 'leave'; return;
+      }
+      if (this.mode === 'leave') {
+        if (!b.room) { this.mode = 'idle'; this.t = this.idleTime(); this.wander = 0; this.leftAt = m.time; }
+        else if (!b.path.length) { const o = m.grid.outside(b.room); m.pathTo(b, o.x, o.y); }
+        return;
+      }
+    }
+    // 回马枪：离开房间后看到有人跟进去（简单难度：随机）
+    tryRevisit() {
+      const m = this.m, b = m.boss, L = b.lastLeft; if (!L || !this.can('revisit') || m.time - L.t > A.BOSS_SKILLS.revisit.window) return false;
+      if (!this.d.track) return false;
+      const follower = Object.values(this.belief).some(B => B.room === L.room && B.since >= L.t);
+      if (!follower || this.rnd() >= this.d.revisit) return false;
+      if (m.useBossSkill('revisit')) { this.target = L.room; this.mode = 'go'; return true; }
+      return false;
+    }
+  }
+  // 每帧在 idle 时检查回马枪（放在原型上，方便测试单独调用）
+  const think0 = BossAI.prototype.think;
+  BossAI.prototype.think = function (dt) {
+    think0.call(this, dt);
+    if (this.mode === 'idle' && this.m.phase === 'playing' && !(this.m.boss.waitT > 0)) {
+      if (this.d.track) this.tryRevisit();
+      else if (this.leftAt != null && this.m.time - this.leftAt < 0.05 && this.rnd() < 0.35) { if (this.can('revisit') && this.m.useBossSkill('revisit')) { this.target = this.m.boss.lastLeft.room; this.mode = 'go'; } }
+    }
+  };
+  A.BossAI = BossAI;
+})(typeof window !== 'undefined' ? window : globalThis);
