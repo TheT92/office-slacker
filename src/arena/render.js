@@ -106,10 +106,12 @@
       if (this.cam.room) this.roomOverlay();
       else if (m.player.kind === 'boss' && m.boss.waitT > 0 && m.phase === 'playing') this.bossWaitOverlay();
       else this.deskArrow();
-      this.spottedMarks(); this.eventStrip();
+      const hide = m.player.kind === 'boss' && m.boss.waitT > 0 && m.phase === 'playing';
+      if (!hide) this.spottedMarks(); this.eventStrip();
       this.offerOverlay();
       this.arriveHud();
-      this.drawFloats(dt); this.drawToasts(dt); this.drawBanner(dt); this.drawEventCard(dt);
+      if (hide) this.floats = []; else this.drawFloats(dt);   // 飘字也会暴露员工位置
+      this.drawToasts(dt); this.drawBanner(dt); this.drawEventCard(dt);
       ctx.restore();
       this.topBar(); this.bottomBar();
       if (m.phase === 'prep') this.identityCard(true);
@@ -397,10 +399,10 @@
       panel(t / maxS, left < 4 ? C().coral : '#7CD3A2', m.mustStay(p) ? '至少再待 ' + Math.ceil(A.ECON.minStay - t) + ' 秒' : left < 4 ? '腿快麻了… ' + Math.ceil(left) + ' 秒后自动出门' : '还能待 ' + Math.ceil(left) + ' 秒',
         cell && cell.stairs ? ['爬楼梯中，还没开始赚', '#A99A88'] : ['$' + (rate * mul).toFixed(1) + '/秒 ' + (t > R.rise * sk ? '↓' : '↑'), '#D9780A']);
     }
-        // 老板开局还没到：整个场景暗下来
+    // 老板开局还没到：整个场景用不透明底色盖住（看不到员工往哪走）
     bossWaitOverlay() {
       const { ctx } = this, b = this.app.match.boss;
-      ctx.fillStyle = 'rgba(74,58,46,0.92)'; ctx.fillRect(0, VY, W, VH);
+      ctx.fillStyle = '#4A3A2E'; ctx.fillRect(-20, VY - 20, W + 40, VH + 40);   // 完全不透明；多盖一圈防屏幕抖动露边
       OS.sprites.drawBoss(ctx, W / 2, VY + 250, 2.2, { t: this.time, vivid: true, outline: 3, look: Math.sin(this.time * 1.5) * 3 });
       T().boldText(ctx, '老板还在路上', W / 2, VY + 380, 26, '#FFFFFF');
       ctx.fillStyle = '#E8D9C6'; ctx.font = F(14, true); ctx.textAlign = 'center'; ctx.fillText('看不到员工往哪走 · 可以先选技能', W / 2, VY + 418);

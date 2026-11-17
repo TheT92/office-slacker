@@ -133,3 +133,17 @@ test('连摸途中被抓：按比例没收整个口袋，连摸加成清零', ()
   enter(m, p, 'pantry'); tick(m, 4.1); m.exitRoom(p); tick(m, 1.5); enter(m, p, 'print'); assert.strictEqual(p.combo, 2);
   tick(m, 1); bossInto(m, 'print'); assert.strictEqual(p.combo, 0); assert.ok(p.pocket > 0, '没扣光');
 });
+
+test('玩家当老板：开局"老板还在路上"用完全不透明的底色盖住场景，员工名字和飘字都不画', () => {
+  ['render/theme', 'render/sprites', 'arena/app', 'arena/render'].forEach(m => require('../src/' + m + '.js'));
+  const texts = [], fills = [];
+  const ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)), fillRect() { fills.push(ctx.fillStyle); } }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
+  const app = new A.App({ prep: 0, rng: mulberry32(6), matchOpts: { bossWait: 5, playerRole: 'boss' } }), r = new A.Renderer({ width: 540, height: 960, getContext: () => ctx }, app);
+  const m = app.start(); tick(m, 1); r.float(10, 10, '+$5', '#000');
+  texts.length = 0; fills.length = 0; r.draw(0.016);
+  assert.ok(texts.includes('老板还在路上'));
+  const i = fills.lastIndexOf('#4A3A2E'); assert.ok(i >= 0, '用不透明颜色盖住');
+  const after = texts.slice(texts.indexOf('老板还在路上'));
+  m.employees().forEach(e => assert.ok(!after.includes(e.name), '盖住以后不再画员工名字：' + e.name));
+  assert.ok(!texts.includes('+$5'), '飘字不画');
+});
