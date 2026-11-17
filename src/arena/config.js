@@ -53,7 +53,7 @@
     // 老板：bossStay 进门后必须逗留的秒数；bossCdMin~bossCdMax 出来后再查这个房间的冷却（每次随机，员工看不到；故意短于员工最长停留，跟在老板后面进去只是前几秒安全）
     print:    { name: '打印室', zone: 'D', door: 'd', slack: true, cap: 1, peak: 9, rise: 9, maxStay: 15, cooldown: 20, floor: 0.35, bossStay: 3, bossCdMin: 6, bossCdMax: 12 },
     pantry:   { name: '茶水间', zone: 'P', door: 'p', slack: true, cap: 2, peak: 7, rise: 12, maxStay: 20, cooldown: 15, floor: 0.35, bossStay: 4, bossCdMin: 5, bossCdMax: 10 },
-    rooftop:  { name: '天台', zone: 'R', door: 'r', slack: true, cap: 2, peak: 12, rise: 14, maxStay: 25, cooldown: 30, floor: 0.35, stairs: 'S', bossStay: 5, bossCdMin: 8, bossCdMax: 15 },
+    rooftop:  { name: '天台', zone: 'R', door: 'r', slack: true, cap: 2, peak: 12, rise: 14, maxStay: 25, cooldown: 30, floor: 0.35, stairs: 'S', bossStay: 4, bossCdMin: 8, bossCdMax: 15 },
     // 厕所（2.2.0）：安全房间，老板进不去也抓不到；收入固定 $2/秒直接存入；最多待 10 秒，出来腿麻 4 秒（移动 ×0.6），45 秒冷却；
     // 有人时别的员工在门口站 2 秒 = 敲门，里面的人剩余时间减半（每次只能被敲一次）
     toilet:   { name: '厕所', zone: 'W', door: 'w', slack: false, safe: true, cap: 1, wage: 2, maxStay: 10, cooldown: 45, numb: 4, numbMult: 0.6, knock: 2 },

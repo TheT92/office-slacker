@@ -299,15 +299,12 @@
       if (a === p) {   // 自己身上的状态
         const tags = [a.dashT > 0 && '冲刺', a.nightT > 0 && '夜视 ' + Math.ceil(a.nightT) + 's', a.numbT > 0 && '腿麻 ' + Math.ceil(a.numbT) + 's', a.doubleT > 0 && '×2 ' + Math.ceil(a.doubleT) + 's', a.leaveNote && '请假条', a.immuneT > 0 && '免抓 ' + Math.ceil(a.immuneT) + 's', a.fastT > 0 && '咖啡因 ' + Math.ceil(a.fastT) + 's', a.inspire > 1 && '灵感 ×' + a.inspire, a.spottedT > 0 && '被点名 ' + Math.ceil(a.spottedT) + 's'].filter(Boolean);
         tags.forEach((t, i) => this.chip(x - 40 * k, y - 12 * k + i * 24, t, '#2E9E5B', 11));
-        T().boldText(ctx, '▼', x, top - 22 - 4 * this.pulse(0.7), 16, '#FFC93C');
+        T().boldText(ctx, '▼', x, top - 6 - 4 * this.pulse(0.7), 18, '#FFC93C');   // 2.5.2 起不画名字，只用箭头标出自己
       }
       if (a.slipT > 0) this.chip(x, top - 34, '滑倒了！', '#D9A21E', 11);
-      if (m.leader() === a) this.crown(x, top - (a === p ? 40 : 22));   // 头名悬赏：头上一顶皇冠，谁看到都知道
-      ctx.font = F(12, true); const nw = ctx.measureText(a.name).width + 12;
-      T().chunky(ctx, x - nw / 2, top - 9, nw, 18, 9, a === p ? '#FFC93C' : '#FFFFFF', { depth: 1, lineWidth: 1.5 });
-      T().boldText(ctx, a.name, x, top + 0.5, 12, a === p ? '#FFFFFF' : '#6B5442');
+      if (m.leader() === a) this.crown(x, top - (a === p ? 28 : 6));   // 头名悬赏：头上一顶皇冠，谁看到都知道（员工头上不再画名字）
       // 口袋里的钱（老板只看到钱袋和"?"）
-      if (a.pocket >= 1) { const cm = A.comboMult(a.combo), t = p.kind === 'boss' ? '?' : '$' + Math.floor(a.pocket) + (cm > 1 ? ' ×' + cm.toFixed(1) : ''); ctx.font = F(12, true); const w = ctx.measureText(t).width + 28, bx = x + 14 * k, by = y - 20 * k; T().chunky(ctx, bx, by, w, 20, 10, '#FFF1D2', { depth: 2, lineWidth: 1.5 }); T().coin(ctx, bx + 11, by + 10, 6.5); ctx.fillStyle = C().moneyDeep; ctx.textAlign = 'left'; ctx.fillText(t, bx + 21, by + 10.5); }
+      if (a.pocket >= 1) { const cm = A.comboMult(a.combo), t = p.kind === 'boss' ? '?' : '$' + Math.floor(a.pocket) + (cm > 1 ? ' ×' + cm.toFixed(1) : ''); ctx.font = F(24, true); const w = ctx.measureText(t).width + 54, bx = x + 14 * k, by = y - 20 * k - 10; T().chunky(ctx, bx, by, w, 40, 20, '#FFF1D2', { depth: 3, lineWidth: 2.5 }); T().coin(ctx, bx + 21, by + 20, 13); ctx.fillStyle = C().moneyDeep; ctx.textAlign = 'left'; ctx.fillText(t, bx + 40, by + 21); }   // 2.5.2 放大一倍
     }
     crown(x, y) {
       const { ctx } = this, w = 26, h = 16, b = Math.sin(this.time * 4) * 1.5;
@@ -661,10 +658,12 @@
       for (const e of m.activeEvents) chips.push([e.name + ' ' + Math.ceil(e.t) + 's', e.good ? '#2E9E5B' : BOSS_RED]);
       if (m.stealBy) chips.push([m.get(m.stealBy.by).name + '在抢功劳', '#9B51E0']);
       if (!chips.length) return;
-      const { ctx } = this; ctx.font = F(13, true);
-      const ws = chips.map(c => ctx.measureText(c[0]).width + 20), tot = ws.reduce((a, b) => a + b, 0) + (chips.length - 1) * 8; let x = (W - tot) / 2;
-      const y = VY + (this.cam.room ? 18 : 20) + (this.cam.room ? 0 : 0);
-      chips.forEach((c, i) => { const pul = i === 0 && m.eventPreviewed ? 1 + 0.06 * this.pulse(0.5) : 1; ctx.save(); ctx.translate(x + ws[i] / 2, y); ctx.scale(pul, pul); this.chip(0, 0, c[0], c[1], 13); ctx.restore(); x += ws[i] + 8; });
+      const { ctx } = this; let size = 26;   // 2.5.2 放大一倍（13 → 26）；一排放不下时整体缩小
+      const widths = sz => { ctx.font = F(sz, true); return chips.map(c => ctx.measureText(c[0]).width + 16 + 4); };
+      let ws = widths(size), tot = ws.reduce((a, b) => a + b, 0) + (chips.length - 1) * 8;
+      if (tot > W - 16) { size = Math.max(13, Math.floor(size * (W - 16) / tot)); ws = widths(size); tot = ws.reduce((a, b) => a + b, 0) + (chips.length - 1) * 8; }
+      let x = (W - tot) / 2; const y = VY + 14 + (size + 10) / 2;
+      chips.forEach((c, i) => { const pul = i === 0 && m.eventPreviewed ? 1 + 0.06 * this.pulse(0.5) : 1; ctx.save(); ctx.translate(x + ws[i] / 2, y); ctx.scale(pul, pul); this.chip(0, 0, c[0], c[1], size); ctx.restore(); x += ws[i] + 8; });
     }
     // 红包、香蕉皮（在办公区地上）
     groundItems() {

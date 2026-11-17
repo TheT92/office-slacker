@@ -1,6 +1,6 @@
 {
   "name": "office-slacker",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "一起来摸鱼：职场摸鱼策略游戏（小清新 2D，Canvas + WebAudio，无外部素材）",
   "scripts": { "test": "node --test" },
   "license": "MIT"
