@@ -11,7 +11,7 @@
       this.rng = opts.rng || Math.random; this.matchOpts = opts.matchOpts || {};
       this.prep = opts.prep != null ? opts.prep : A.PREP.time;   // 开局准备秒数（测试可传 0）
       this.screen = 'title'; this.match = null; this.paused = false; this.acc = 0;
-      const s = A.loadSettings(opts.storage); this.muted = s.mute; this.music = s.bgm; this.storage = opts.storage || null;
+      const s = A.loadSettings(opts.storage); this.muted = s.mute; this.music = s.bgm; this.gfx = s.gfx; this.storage = opts.storage || null;
       this.difficulty = A.DIFFICULTY && A.DIFFICULTY[s.arenaDifficulty] ? s.arenaDifficulty : 'normal';   // AI 老板难度（记住上次的选择）
     }
     // 点"开始"：随机分配身份
@@ -30,6 +30,7 @@
     toggleCard() { if (this.paused) this.cardOpen = !this.cardOpen; return this.cardOpen; }
     togglePause() { if (this.paused) this.resume(); else this.pause(); }
     setDifficulty(d) { if (!A.DIFFICULTY[d]) return false; this.difficulty = d; A.saveSettings(this.storage, { arenaDifficulty: d }); return true; }
+    toggleGfx() { this.gfx = this.gfx === '2d' ? '3d' : '2d'; A.saveSettings(this.storage, { gfx: this.gfx }); return this.gfx; }   // B4：画面 3D / 经典
     toggleMute() { this.muted = !this.muted; A.saveSettings(this.storage, { mute: this.muted }); return this.muted; }
     // 真实时间推进，内部按 1/60 秒固定步长
     tick(realDt) {
@@ -85,7 +86,7 @@
   // 与闯关模式共用存档里的 settings.mute / settings.bgm（只改这两项）
   const KEY = 'office-slacker:progress:v1';
   A.loadSettings = function (storage) {
-    try { const d = JSON.parse(storage.getItem(KEY)) || {}; const s = d.settings || {}; return { mute: !!s.mute, bgm: s.bgm !== false, arenaDifficulty: s.arenaDifficulty || 'normal' }; } catch (e) { return { mute: false, bgm: true, arenaDifficulty: 'normal' }; }
+    try { const d = JSON.parse(storage.getItem(KEY)) || {}; const s = d.settings || {}; return { mute: !!s.mute, bgm: s.bgm !== false, arenaDifficulty: s.arenaDifficulty || 'normal', gfx: s.gfx === '2d' ? '2d' : '3d' }; } catch (e) { return { mute: false, bgm: true, arenaDifficulty: 'normal', gfx: '3d' }; }
   };
   A.saveSettings = function (storage, patch) {
     if (!storage) return;

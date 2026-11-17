@@ -140,7 +140,7 @@ test('静音设置与闯关模式共用存档，只改 mute', () => {
   const app = new A.App({ prep: 0, storage: st }); assert.strictEqual(app.muted, false); assert.strictEqual(app.music, false);
   app.toggleMute(); const d = JSON.parse(st.getItem('office-slacker:progress:v1'));
   assert.deepStrictEqual(d, { stars: { 1: 3 }, settings: { speed: 2, bgm: false, mute: true } });
-  assert.deepStrictEqual(A.loadSettings(null), { mute: false, bgm: true, arenaDifficulty: 'normal' });
+  assert.deepStrictEqual(A.loadSettings(null), { mute: false, bgm: true, arenaDifficulty: 'normal', gfx: '3d' });
 });
 
 test('画面：标题、办公区全图、房间视角（外面变暗、只画房间里的人）、暂停、结算都能绘制', () => {

@@ -4,6 +4,10 @@
   let storage = null; try { storage = window.localStorage; storage.getItem('x'); } catch (e) { storage = null; }
   const role = (location.search.match(/[?&]role=(boss|employee)/) || [])[1];   // 测试用：?role=boss / ?role=employee 指定身份
   const app = new A.App({ storage, matchOpts: role ? { playerRole: role } : {} }), r = new A.Renderer(canvas, app);
+  // B4：3D 画面（three.js）。手机不支持 WebGL 时自动退回经典 2D 画面；暂停菜单可切换
+  const gfxQ = (location.search.match(/[?&]gfx=(2d|3d)/) || [])[1]; if (gfxQ) app.gfx = gfxQ;
+  const v3 = A.View3D ? new A.View3D(app, r, document.getElementById('world3d')) : null; r.v3 = v3;
+  if (v3) v3.setEnabled(app.gfx !== '2d');
   const hello = () => { const p = app.match.player; r.toast(p.kind === 'boss' ? '你是老板！' + A.BOSS_ARRIVE.wait + ' 秒后出现在办公区正中间' : '你是' + p.name + '！绿色框是你的工位'); };
   OS.audio.setMuted(app.muted); if (OS.audio.setSong) OS.audio.setSong('arena'); OS.audio.setMusic(app.music);   // 2.3.1：摸鱼大作战用自己的背景音乐
 
@@ -15,6 +19,8 @@
     const k = Math.min(aw / V.W, ah / V.H), dpr = Math.min(3, window.devicePixelRatio || 1);
     canvas.style.width = Math.floor(V.W * k) + 'px'; canvas.style.height = Math.floor(V.H * k) + 'px';
     canvas.width = Math.round(V.W * dpr * Math.max(1, k)); canvas.height = Math.round(V.H * dpr * Math.max(1, k));
+    const wrap = document.getElementById('stage'); if (wrap) { wrap.style.width = canvas.style.width; wrap.style.height = canvas.style.height; }
+    if (v3 && v3.ok) v3.fit(Math.floor(V.W * k), Math.floor(V.H * k), dpr);
   }
   window.addEventListener('resize', fit); fit();
 
@@ -38,6 +44,7 @@
     if (ev.pointerType === 'touch' || ev.pointerType === 'pen') r.touch = true; else if (ev.pointerType === 'mouse') r.touch = false;   // 手机上不显示键盘提示
     const p = toLogic(ev);
     if (app.screen === 'title') {
+      if (hit(U.titleSound, p)) { OS.audio.setMuted(app.toggleMute()); OS.audio.play('click'); return; }   // 喇叭：音效开关
       const di = U.diff.find(b => hit(b, p)); if (di) { app.setDifficulty(di.id); OS.audio.play('click'); return; }
       if (hit(U.start, p)) { OS.audio.play('click'); app.start(); OS.audio.setTempo(1); }
       else if (hit(U.back, p)) location.href = 'index.html';
@@ -46,7 +53,7 @@
     const m = app.match;
     if (m.phase === 'over') { if (hit(U.again, p)) { app.restart(); OS.audio.setTempo(1); } else if (hit(U.home2, p)) app.toTitle(); return; }
     if (app.paused && app.cardOpen) { app.toggleCard(); return; }   // 身份卡：点任意位置关闭
-    if (app.paused) { if (hit(U.card, p)) app.toggleCard(); else if (hit(U.resume, p)) app.resume(); else if (hit(U.sound, p)) OS.audio.setMuted(app.toggleMute()); else if (hit(U.restart, p)) { app.restart(); OS.audio.setTempo(1); } else if (hit(U.home, p)) app.toTitle(); return; }
+    if (app.paused) { if (hit(U.card, p)) app.toggleCard(); else if (hit(U.resume, p)) app.resume(); else if (hit(U.sound, p)) OS.audio.setMuted(app.toggleMute()); else if (hit(U.restart, p)) { app.restart(); OS.audio.setTempo(1); } else if (hit(U.home, p)) app.toTitle(); else if (v3 && v3.ok && hit(U.gfx, p)) v3.setEnabled(app.toggleGfx() === '3d'); return; }
     if (hit(U.gear, p)) { if (m.phase === 'playing') app.pause(); return; }   // 设置：暂停菜单
     if (m.phase === 'prep') { if (hit(U.ready, p)) app.ready(); return; }   // 准备阶段：只有"准备好了"能点
     if (app.hasOffer()) { const i = A.offerRects(m.player.kind === 'boss' ? m.offer.options.length : 2).findIndex(c => hit(c, p)); if (i >= 0) { app.pickOffer(i); return; } }
@@ -92,6 +99,7 @@
   function events() {
     const m = app.match; if (!m) return;
     for (const ev of m.drainEvents()) {
+      if (v3) try { v3.onEvent(ev); } catch (e) { console.error(e); }
       const me = ev.who === m.player.id;
       if (ev.type === 'blocked' && me && m.player.kind === 'boss') {
         r.toast(ev.reason === 'stay' ? '查房要待满，还剩 ' + Math.ceil(m.boss.stay) + ' 秒' : ev.reason === 'cooldown' ? '刚查过' + ROOM(ev.room) + '，' + Math.ceil(m.boss.cooldowns[ev.room]) + ' 秒后才能再查' : ev.reason === 'lockedDoor' ? '门被堵住了，推不开！' : ev.reason === 'locked' ? '老板不能进厕所' : ev.reason === 'closed' ? ROOM(ev.room) + '卡纸关闭中' : '进不去', OS.theme.C.coral);
@@ -105,12 +113,13 @@
       if (ev.type === 'exit' && me && ev.pocket >= 1) { const p = m.player, cm = A.comboMult(p.combo), nx = A.comboMult(p.combo + 1); r.toast('口袋 $' + Math.floor(ev.pocket) + '：按空格回工位存 ×' + cm.toFixed(1) + (nx > cm ? '，或再摸一间变 ×' + nx.toFixed(1) : '')); }
       if (ev.type === 'deposit') {
         const a = m.get(ev.who); r.cam = r.camera();
-        if (me) { r.float(r.sx(a.x), r.sy(a.y) - 40, '+$' + Math.floor(ev.amount) + (ev.mult > 1 ? '（连摸 ×' + ev.mult.toFixed(1) + '）' : ''), '#FFC93C'); OS.audio.play('coin'); }
+        if (me) { r.float(r.P(a.x, a.y, 1.6).X, r.P(a.x, a.y, 1.6).Y, '+$' + Math.floor(ev.amount) + (ev.mult > 1 ? '（连摸 ×' + ev.mult.toFixed(1) + '）' : ''), '#FFC93C'); OS.audio.play('coin'); }
       }
       if (ev.type === 'caught') {
+        r.bossAngryT = 2.5;   // 3D：老板抓到人时喷火
         const a = m.get(ev.who); r.cam = r.camera();
-        if (me) { r.toast('被老板抓到！没收口袋 ' + Math.round(ev.ratio * 100) + '%（-$' + Math.floor(ev.lost) + '）', OS.theme.C.coral); r.float(r.sx(a.x), r.sy(a.y) - 50, '-$' + Math.floor(ev.lost), '#E8746A'); r.shake = 0.4; OS.audio.play('caught'); }
-        else if (m.player.kind === 'boss') { r.toast((ev.bounty ? '抓到头名' : '抓到') + a.name + '！没收 $' + Math.floor(ev.lost) + '（收益 ×' + ev.mult.toFixed(2).replace(/0$/, '') + '）', '#2E9E5B'); r.cam = r.camera(); r.float(r.sx(a.x), r.sy(a.y) - 50, '+$' + Math.floor(ev.lost), '#2ECC71'); }
+        if (me) { r.toast('被老板抓到！没收口袋 ' + Math.round(ev.ratio * 100) + '%（-$' + Math.floor(ev.lost) + '）', OS.theme.C.coral); r.float(r.P(a.x, a.y, 1.8).X, r.P(a.x, a.y, 1.8).Y, '-$' + Math.floor(ev.lost), '#E8746A'); r.shake = 0.4; OS.audio.play('caught'); }
+        else if (m.player.kind === 'boss') { r.toast((ev.bounty ? '抓到头名' : '抓到') + a.name + '！没收 $' + Math.floor(ev.lost) + '（收益 ×' + ev.mult.toFixed(2).replace(/0$/, '') + '）', '#2E9E5B'); r.cam = r.camera(); r.float(r.P(a.x, a.y, 1.8).X, r.P(a.x, a.y, 1.8).Y, '+$' + Math.floor(ev.lost), '#2ECC71'); }
         else if (!m.player.room) r.toast(a.name + ' 在' + ROOM(ev.room) + '被抓了', '#8C6B4F');   // 在房间里听不到外面的事
       }
       // —— A4：技能、升级、补给 ——
@@ -160,9 +169,10 @@
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     // 任何一帧出错都不能让主循环停掉（否则整个画面卡死）
     try { app.tick(dt); events(); } catch (e) { console.error(e); }
+    try { if (v3) v3.draw(dt); } catch (e) { console.error(e); }
     try { r.draw(dt); } catch (e) { console.error(e); }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  window.__arena = app;   // 控制台调试
+  window.__arena = app; window.__v3 = v3;   // 控制台调试
 })();

@@ -32,7 +32,8 @@ index.html            入口（普通 script 标签加载）
 src/config/           数据：balance 数值 / map 区域 / characters 角色 / levels 关卡
 src/core/             纯逻辑（不碰 DOM）：app(选关/流程/倍速), progress(星级/存档/设置), lineup(解锁/阵容), hints(提示状态), auto(普通技能自动), game, boss, employee, skills, economy, rules
 arena.html            新模式「摸鱼大作战」入口
-src/arena/            新模式：config 地图房间 / path 寻路 / bossai AI 老板 / empai AI 员工 / skills 技能与升级 / supply 补给 / match 对局逻辑 / app 流程 / render 画面 / main 输入与主循环
+src/arena/            新模式：config 地图房间 / path 寻路 / bossai AI 老板 / empai AI 员工 / skills 技能与升级 / supply 补给 / match 对局逻辑 / app 流程 / render 画面（界面 + 经典 2D 场景）/ world3d 3D 场景和角色模型 / view3d 3D 画面层（同步、镜头、点击换算）/ main 输入与主循环
+lib/three.min.js      three.js r159 单文件版（MIT，见 lib/THREE-LICENSE.txt），摸鱼大作战的 3D 画面用；不需要打包，双击 arena.html 也能运行
 src/render/           theme（配色）、sprites（动物/老板/道具绘制）、renderer（全部界面与特效）、ui（布局与命中检测）
 src/audio.js          WebAudio 合成音效与背景音乐
 src/input.js          鼠标/触屏/键盘

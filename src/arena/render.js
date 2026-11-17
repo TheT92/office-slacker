@@ -16,6 +16,7 @@
   // 界面按钮（逻辑坐标）
   const UI = {
     gear: { x: 482, y: 14, w: 46, h: 46 },
+    titleSound: { x: 474, y: 16, w: 52, h: 52 },   // 标题页右上角：音效开关（喇叭）
     action: { x: 16, y: 830, w: 296, h: 96 },          // 员工大按钮
     item: { x: 320, y: 830, w: 72, h: 96 },            // 员工道具格（捣乱补给，Q）
     skill: { x: 400, y: 830, w: 124, h: 96 },          // 员工技能（E）
@@ -27,6 +28,7 @@
     sound: { x: 150, y: 470, w: 240, h: 54 },
     restart: { x: 150, y: 540, w: 240, h: 54, label: '重新开始' },
     home: { x: 150, y: 610, w: 240, h: 54, label: '返回首页' },
+    gfx: { x: 150, y: 680, w: 240, h: 54 },
     again: { x: 40, y: 862, w: 220, h: 56, label: '再来一局' },
     home2: { x: 280, y: 862, w: 220, h: 56, label: '返回首页' },
     ready: { x: 140, y: 866, w: 260, h: 56, label: '准备好了' },
@@ -43,7 +45,7 @@
     const d = H - 960, mid = Math.round(d / 2);
     UI.action.y = BOT + 18; UI.item.y = BOT + 18; UI.skill.y = BOT + 18; UI.bskill.forEach(b => (b.y = BOT + 14)); UI.bossAction.y = BOT + 86;
     UI.ready.y = 866 + d; UI.again.y = 862 + d; UI.home2.y = 862 + d;
-    [['resume', 330], ['card', 400], ['sound', 470], ['restart', 540], ['home', 610]].forEach(([id, y]) => (UI[id].y = y + mid));
+    [['resume', 330], ['card', 400], ['sound', 470], ['restart', 540], ['home', 610], ['gfx', 680]].forEach(([id, y]) => (UI[id].y = y + mid));
     const t0 = Math.round(mid * 0.6); UI.diff.forEach(b => (b.y = 588 + t0)); UI.start.y = 690 + t0; UI.back.y = 764 + t0;   // 标题页：规则板在上，按钮在中间，动物在最下面
     A.VIEW = { W, H, TS, TOP, BOT, VY, VH };
     return A.VIEW;
@@ -84,7 +86,74 @@
       ox = Math.min(0, Math.max(W - g.cols * ts, ox)); oy = Math.min(VY, Math.max(VY + VH - g.rows * ts, oy));   // 不拍到地图外面
       return { s: ts, ox, oy, room: null };
     }
-    toWorld(px, py) { const c = this.cam || this.camera(); return { x: (px - c.ox) / c.s, y: (py - c.oy) / c.s }; }
+    toWorld(px, py) { if (this.is3d()) return this.v3.toWorld(px, py); const c = this.cam || this.camera(); return { x: (px - c.ox) / c.s, y: (py - c.oy) / c.s }; }
+    // 某个格子点现在在不在屏幕的场景区域里（2D / 3D 通用）
+    seen(x, y, h, pad) { if (this.is3d()) return this.v3.onScreen(x, y, h, pad); return this.onScreen(x, y, pad); }
+    // 3D 模式下贴在场景上的提示：门上的状态、门牌、工位、补给名字、红包金额、头顶的标签和口袋（B4-3）
+    overlay3d() {
+      const { ctx } = this, m = this.app.match, p = m.player, g = m.grid, room = this.cam.room, V3 = this.v3, chip = (q, dy, t, col, sz) => this.chip(q.X, q.Y + (dy || 0), t, col, sz);
+      const hide = p.kind === 'boss' && m.boss.waitT > 0 && m.phase === 'playing'; if (hide) return;
+      if (!room) {
+        // 门牌（门的正上方）+ 门上的状态（门外一侧）
+        for (const id of ['print', 'toilet', 'pantry', 'rooftop']) {
+          const d = this.doorInfo(id); if (!V3.onScreen(d.x, d.y, 2.4, 20)) continue;
+          const R = A.ROOMS[id], lure = R.slack ? m.lure(id) : 1, lt = lure >= 1.05 ? ' ×' + lure.toFixed(1) : '', n = m.occupants(id).filter(e => e.kind === 'employee').length;
+          const text = R.safe ? (p.kind === 'boss' ? R.name + ' · 老板进不去' : R.name + ' · 安全 ' + n + '/' + R.cap) : p.kind === 'boss' ? R.name + lt : R.name + ' ' + n + '/' + R.cap + lt;
+          const q = this.P(d.x, d.y, 2.5); ctx.font = F(14, true); const w = ctx.measureText(text).width + 18;
+          T().chunky(ctx, q.X - w / 2, q.Y - 12, w, 24, 12, '#FFFFFF', { depth: 2, lineWidth: 2 }); T().boldText(ctx, text, q.X, q.Y + 0.5, 14, R.slack ? RCOL(id).edge : '#B08D6F');
+        }
+        const at = id => { const d = this.doorInfo(id); return V3.onScreen(d.x, d.y, 0, 10) ? this.P(d.x + d.dx * 1.1, d.y + d.dy * 1.1, 0.4) : null; };
+        for (const id in m.closed) { const q = at(id); if (q) chip(q, -26, '卡纸关闭 ' + Math.ceil(m.closed[id]) + 's', '#A99A88'); }
+        if (p.kind === 'employee') { const q = at('toilet'); if (q) { const why = m.entryBlock(p, 'toilet'); if (p.knockT > 0) chip(q, -26, '敲门中…' + Math.ceil(A.ROOMS.toilet.knock - p.knockT), '#4FA9B3'); if (why === 'full') chip(q, 0, '有人', '#4FA9B3'); else if (why === 'cooldown') chip(q, 0, '冷却 ' + Math.ceil(p.cooldowns.toilet) + 's', '#A99A88'); } }
+        for (const id of A.SLACK_ROOMS) {
+          const q = at(id); if (!q) continue;
+          if (p.kind === 'boss') { if (p.cooldowns[id] > 0) chip(q, 0, '冷却 ' + Math.ceil(p.cooldowns[id]) + 's', '#A99A88'); continue; }
+          const why = m.entryBlock(p, id);
+          if (why === 'boss') chip(q, 0, '老板在里面', BOSS_RED); else if (why === 'cooldown') chip(q, 0, '冷却 ' + Math.ceil(p.cooldowns[id]) + 's', '#A99A88'); else if (why === 'full') chip(q, 0, '满了', C().coral);
+        }
+        // 工位：我的工位 / 打翻了 / 老板看到谁不在
+        for (const d of A.DESKS) {
+          if (!V3.onScreen(d.c + 1, d.r + 0.5, 0, 30)) continue;
+          const own = p.desk === d, owner = m.employees().find(e => e.desk === d), lockT = m.deskLocks && m.deskLocks[d.id];
+          if (own) chip(this.P(d.c + 1, d.r + 1.7, 0), 0, '我的工位', '#2ECC71', 11);
+          if (lockT > 0 && A.inSight(p, d.c + 1, d.r + 0.5)) chip(this.P(d.c + 1, d.r + 0.5, 1.6), 0, '打翻了 ' + Math.ceil(lockT) + 's', C().coral, 11);
+          if (p.kind === 'boss' && owner && owner.room) chip(this.P(d.c + 1, d.r + 1.7, 0), 0, owner.name + ' · 不在', C().coral, 11);
+        }
+        // 红包金额
+        for (const b of m.bags || []) if (A.inSight(p, b.x, b.y)) chip(this.P(b.x, b.y, 0.85), 0, '$' + b.cash, '#E0453A', 11);
+        // 监控：房间里有几个人
+        if (p.kind === 'boss') for (const id of m.peekRooms()) { const cs = g.cells.filter(k => k.room === id), cx = cs.reduce((a, k) => a + k.c + 0.5, 0) / cs.length, cy = cs.reduce((a, k) => a + k.r + 0.5, 0) / cs.length, q = this.P(cx, cy, 1.2), n = m.employees().filter(e => e.room === id).length; this.chip(Math.max(85, Math.min(W - 85, q.X)), Math.max(VY + 24, Math.min(BOT - 24, q.Y)), '监控 ' + A.ROOMS[id].name + '：' + (n ? n + ' 人' : '没人'), '#9B51E0', 13); }
+      }
+      // 补给名字 + 捡起读条
+      for (const it of m.supplies) {
+        if (!V3.seesSpot(it.x, it.y, it.room)) continue; const q = this.P(it.x, it.y, 0.9), I = A.SUPPLY.items[it.kind];
+        ctx.font = F(11, true); const w = ctx.measureText(I.name).width + 10; T().chunky(ctx, q.X - w / 2, q.Y - 8, w, 16, 8, '#FFFFFF', { depth: 1, lineWidth: 1.2 }); T().boldText(ctx, I.name, q.X, q.Y + 0.5, 11, '#8C6B4F');
+        if (it.prog > 0) { const c = this.P(it.x, it.y, 0.3); ctx.beginPath(); ctx.arc(c.X, c.Y, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * it.prog / (it.need || A.SUPPLY.pick)); ctx.strokeStyle = '#2ECC71'; ctx.lineWidth = 4; ctx.stroke(); }
+      }
+      // 人物头顶：老板名牌；员工的皇冠、开会 / 滑倒；自己：箭头和状态；口袋金币
+      const peek = p.kind === 'boss' ? m.peekRooms() : [];
+      for (const a of m.actors) {
+        if (!A.visible3d(m, p, a, { room, peek })) continue;
+        const head = this.P(a.x, a.y, a.kind === 'boss' ? 2.35 : 2.0); if (head.X < -40 || head.X > W + 40 || head.Y < VY - 40 || head.Y > BOT + 40) continue;
+        if (a.kind === 'boss') {
+          const st = a.freezeT > 0 ? '开会中' : a.stay > 0 ? '查房！' : a.dashT > 0 ? '冲刺！' : '', txt = (a === p ? '老板（你）' : '老板') + (st ? ' · ' + st : ''), ty = Math.max(VY + 16, head.Y + Math.sin(this.time * 3) * 2);
+          ctx.font = F(15, true); const w = ctx.measureText(txt).width + 22; T().chunky(ctx, head.X - w / 2, ty - 13, w, 26, 13, BOSS_RED, { depth: 2, lineWidth: 2 }); T().boldText(ctx, txt, head.X, ty + 0.5, 15, '#FFFFFF');
+          continue;
+        }
+        let top = head.Y;
+        if (a === p) { T().boldText(ctx, '▼', head.X, top - 4 * this.pulse(0.7), 18, '#FFC93C'); top -= 22;
+          const tags = [a.dashT > 0 && '冲刺', a.nightT > 0 && '夜视 ' + Math.ceil(a.nightT) + 's', a.numbT > 0 && '腿麻 ' + Math.ceil(a.numbT) + 's', a.doubleT > 0 && '×2 ' + Math.ceil(a.doubleT) + 's', a.leaveNote && '请假条', a.immuneT > 0 && '免抓 ' + Math.ceil(a.immuneT) + 's', a.fastT > 0 && '咖啡因 ' + Math.ceil(a.fastT) + 's', a.inspire > 1 && '灵感 ×' + a.inspire, a.spottedT > 0 && '被点名 ' + Math.ceil(a.spottedT) + 's'].filter(Boolean);
+          const mid = this.P(a.x, a.y, 1.0); tags.forEach((t, i) => this.chip(mid.X - 52, mid.Y + i * 24, t, '#2E9E5B', 11)); }
+        if (m.leader() === a) { this.crown(head.X, top - 4); top -= 22; }
+        if (a.meetingT > 0) this.chip(head.X, top - 12, '开会中 ' + Math.ceil(a.meetingT) + 's', '#97CDB1', 11);
+        if (a.slipT > 0) this.chip(head.X, top - 12, '滑倒了！', '#D9A21E', 11);
+        if (a.pocket >= 1) { const cm = A.comboMult(a.combo), t = p.kind === 'boss' ? '?' : '$' + Math.floor(a.pocket) + (cm > 1 ? ' ×' + cm.toFixed(1) : ''), q = this.P(a.x, a.y, 1.3); ctx.font = F(24, true); const w = ctx.measureText(t).width + 54, bx = q.X + 22, by = q.Y - 20; T().chunky(ctx, bx, by, w, 40, 20, '#FFF1D2', { depth: 3, lineWidth: 2.5 }); T().coin(ctx, bx + 21, by + 20, 13); ctx.fillStyle = C().moneyDeep; ctx.textAlign = 'left'; ctx.fillText(t, bx + 40, by + 21); }
+      }
+    }
+    // 3D 画面开着并且在对局里（B4）
+    is3d() { return !!(this.v3 && this.v3.on && this.app.screen !== 'title' && this.app.match); }
+    // 格子坐标 → 屏幕坐标（2D / 3D 通用；h = 离地高度，单位格）
+    P(x, y, h) { if (this.is3d()) return this.v3.project(x, y, h); return { X: this.sx(x), Y: this.sy(y) - (h || 0) * this.cam.s }; }
     sx(x) { return this.cam.ox + x * this.cam.s; }
     sy(y) { return this.cam.oy + y * this.cam.s; }
     onScreen(x, y, pad) { pad = pad || 0; const X = this.sx(x), Y = this.sy(y); return X >= -pad && X <= W + pad && Y >= VY - pad && Y <= BOT + pad; }
@@ -99,15 +168,22 @@
       const m = app.match;
       this.cam = this.camera(dt);
       // 场景（只画在中间区域）
+      const d3 = this.is3d(); this.bossAngryT = Math.max(0, (this.bossAngryT || 0) - dt);
       ctx.save(); ctx.beginPath(); ctx.rect(0, VY, W, VH); ctx.clip();
-      ctx.fillStyle = FLOOR.void; ctx.fillRect(0, VY, W, VH);
+      if (d3) ctx.clearRect(0, VY, W, VH);   // 3D：场景区域透明，露出下面的 WebGL 画布
+      else { ctx.fillStyle = FLOOR.void; ctx.fillRect(0, VY, W, VH); }
       if (this.shake > 0) { this.shake = Math.max(0, this.shake - dt); const k = this.shake * 18; ctx.translate((Math.random() - 0.5) * k, (Math.random() - 0.5) * k); }
-      this.world();
+      if (!d3) this.world(); else this.overlay3d();
       if (this.cam.room) this.roomOverlay();
       else if (m.player.kind === 'boss' && m.boss.waitT > 0 && m.phase === 'playing') this.bossWaitOverlay();
       else this.deskArrow();
       const hide = m.player.kind === 'boss' && m.boss.waitT > 0 && m.phase === 'playing';
-      if (!hide) this.spottedMarks(); this.eventStrip();
+      if (!hide) this.spottedMarks();
+      if (m.rush && m.phase === 'playing') {   // 下班冲刺：场景四周一圈跳动的红光
+        const a = 0.3 + 0.18 * this.pulse(0.8), g = ctx.createRadialGradient(W / 2, VY + VH / 2, Math.min(W, VH) * 0.42, W / 2, VY + VH / 2, Math.max(W, VH) * 0.62);
+        if (g) { g.addColorStop(0, 'rgba(224,69,58,0)'); g.addColorStop(1, 'rgba(224,69,58,' + a.toFixed(3) + ')'); ctx.fillStyle = g; ctx.fillRect(0, VY, W, VH); }
+      }
+      this.eventStrip();
       this.offerOverlay();
       this.arriveHud();
       if (hide) this.floats = []; else this.drawFloats(dt);   // 飘字也会暴露员工位置
@@ -327,8 +403,8 @@
     // 自己的工位不在屏幕里：屏幕边上一个绿色箭头指过去
     deskArrow() {
       const m = this.app.match, p = m.player; if (p.kind !== 'employee' || m.phase !== 'playing') return;
-      const st = A.seatOf(p.desk); if (this.onScreen(st.x, st.y - 0.5, -30)) return;
-      const { ctx } = this, cx = W / 2, cy = VY + VH / 2, dx = this.sx(st.x) - cx, dy = this.sy(st.y) - cy, a = Math.atan2(dy, dx);
+      const st = A.seatOf(p.desk); if (this.seen(st.x, st.y - 0.5, 0, -30)) return;
+      const { ctx } = this, cx = W / 2, cy = VY + VH / 2, q = this.P(st.x, st.y), dx = q.X - cx, dy = q.Y - cy, a = Math.atan2(dy, dx);
       const k = Math.min((W / 2 - 34) / Math.abs(dx || 1e-6), (VH / 2 - 34) / Math.abs(dy || 1e-6)), x = cx + dx * k, y = cy + dy * k, hot = p.pocket >= 1;
       ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.globalAlpha = 0.75 + 0.25 * this.pulse(0.9);
       ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -14); ctx.lineTo(-4, 0); ctx.lineTo(-10, 14); ctx.closePath(); ctx.fillStyle = '#2ECC71'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = T().OUTLINE; ctx.stroke(); ctx.restore();
@@ -339,7 +415,7 @@
     // 熊堵门：房间里的人看到门上一把大锁和一圈倒计时
     doorLock(room, lock) {
       const { ctx } = this, d = this.doorInfo(room), r = Math.max(18, Math.min(34, this.cam.s * 0.42)), full = lock.t0 || lock.t, pad = r + 14;
-      const x = Math.max(pad, Math.min(W - pad, this.sx(d.x))), y = Math.max(VY + pad, Math.min(BOT - pad, this.sy(d.y)));   // 门不在屏幕里时贴着屏幕边显示
+      const q = this.P(d.x, d.y, 1), x = Math.max(pad, Math.min(W - pad, q.X)), y = Math.max(VY + pad, Math.min(BOT - pad, q.Y));   // 门不在屏幕里时贴着屏幕边显示
       ctx.save(); ctx.beginPath(); ctx.arc(x, y, r + 6, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = T().OUTLINE; ctx.stroke();
       ctx.beginPath(); ctx.arc(x, y, r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, lock.t / full)); ctx.lineWidth = 5; ctx.strokeStyle = lock.t < 1.5 ? BOSS_RED : '#8F7CC4'; ctx.stroke();
       ctx.fillStyle = '#8F7CC4'; T().rr(ctx, x - r * 0.5, y - r * 0.1, r, r * 0.75, 4); ctx.fill();
@@ -349,9 +425,9 @@
     }
     roomOverlay() {
       const { ctx } = this, m = this.app.match, p = m.player, [c0, r0, c1, r1] = this.cam.box, boss = p.kind === 'boss', R = A.ROOMS[p.room];
-      const x = this.sx(c0), y = this.sy(r0), w = this.sx(c1) - x, h = this.sy(r1) - y;
-      ctx.save(); ctx.beginPath(); ctx.rect(0, VY, W, VH); ctx.rect(x, y, w, h); ctx.fillStyle = '#4A3A2E'; ctx.fill('evenodd');
-      ctx.lineWidth = 6; ctx.strokeStyle = T().OUTLINE; ctx.strokeRect(x, y, w, h); ctx.restore();
+      const d3 = this.is3d(), x = d3 ? 0 : this.sx(c0), y = d3 ? VY : this.sy(r0), w = d3 ? W : this.sx(c1) - x, h = d3 ? VH : this.sy(r1) - y;
+      if (!d3) { ctx.save(); ctx.beginPath(); ctx.rect(0, VY, W, VH); ctx.rect(x, y, w, h); ctx.fillStyle = '#4A3A2E'; ctx.fill('evenodd');
+        ctx.lineWidth = 6; ctx.strokeStyle = T().OUTLINE; ctx.strokeRect(x, y, w, h); ctx.restore(); }
       // 上方气泡：在哪、看不到外面
       const top = Math.max(VY + 34, y + 34), cx = W / 2;
       const bubble = (text, sub, col) => {
@@ -448,6 +524,14 @@
       // 右边：还在冷却的房间
       let rx = W - 14;
       for (const id of A.SLACK_ROOMS.slice().reverse()) { const cd = p.cooldowns[id]; if (!(cd > 0)) continue; const t = A.ROOMS[id].name + ' ' + Math.ceil(cd) + 's'; ctx.font = F(11, true); const w = ctx.measureText(t).width + 14; T().chunky(ctx, rx - w, y2 - 10, w, 20, 10, '#EDE6DC', { depth: 1, lineWidth: 1.2, outline: '#C9B8A6' }); ctx.fillStyle = '#8C7B6B'; ctx.textAlign = 'center'; ctx.fillText(t, rx - w / 2, y2 + 0.5); rx -= w + 6; }
+    }
+    // 喇叭图标：开着画声波，关了画红色斜杠
+    speakerIcon(x, y, r, on) {
+      const { ctx } = this; ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#6B5442'; ctx.strokeStyle = '#6B5442'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(-r * 0.95, -r * 0.32); ctx.lineTo(-r * 0.45, -r * 0.32); ctx.lineTo(r * 0.1, -r * 0.85); ctx.lineTo(r * 0.1, r * 0.85); ctx.lineTo(-r * 0.45, r * 0.32); ctx.lineTo(-r * 0.95, r * 0.32); ctx.closePath(); ctx.fill();
+      if (on) { ctx.lineWidth = r * 0.17; for (const k of [0.45, 0.8]) { ctx.beginPath(); ctx.arc(r * 0.1, 0, r * k, -0.85, 0.85); ctx.stroke(); } }
+      else { ctx.strokeStyle = BOSS_RED; ctx.lineWidth = r * 0.2; ctx.beginPath(); ctx.moveTo(r * 0.35, -r * 0.4); ctx.lineTo(r * 0.95, r * 0.4); ctx.moveTo(r * 0.95, -r * 0.4); ctx.lineTo(r * 0.35, r * 0.4); ctx.stroke(); }
+      ctx.restore();
     }
     gearIcon(x, y, r) {
       const { ctx } = this; ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#6B5442';
@@ -688,7 +772,7 @@
       const { ctx } = this;
       for (const e of m.employees()) {
         if (!(e.spottedT > 0)) continue;
-        let x = this.sx(e.x), y = this.sy(e.y); const off = !this.onScreen(e.x, e.y, -30);
+        const q = this.P(e.x, e.y); let x = q.X, y = q.Y; const off = !this.seen(e.x, e.y, 0, -30);
         if (off) { const cx = W / 2, cy = VY + VH / 2, dx = x - cx, dy = y - cy, k = Math.min((W / 2 - 40) / Math.abs(dx || 1e-6), (VH / 2 - 40) / Math.abs(dy || 1e-6)); x = cx + dx * k; y = cy + dy * k; }
         ctx.save(); ctx.globalAlpha = 0.6 + 0.4 * this.pulse(0.6); ctx.strokeStyle = BOSS_RED; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y - 10, 22, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
         this.chip(x, y - 42, e.name + ' 被点名' + (e.room ? '（' + A.ROOMS[e.room].name + '）' : ''), BOSS_RED, 11);
@@ -698,8 +782,9 @@
       const { ctx } = this; ctx.fillStyle = 'rgba(61,43,31,0.55)'; ctx.fillRect(0, 0, W, H);
       if (this.app.cardOpen) { this.identityCard(false); return; }
       const mid = Math.round((H - 960) / 2);
-      T().chunky(ctx, 110, 220 + mid, 320, 480, 24, '#FFFBF3', { depth: 6 }); T().boldText(ctx, '暂停', W / 2, 272 + mid, 28, '#FFB52E');
-      for (const id of ['resume', 'card', 'sound', 'restart', 'home']) this.btn(UI[id], id === 'sound' ? (this.app.muted ? '音效：关' : '音效：开') : UI[id].label, id === 'resume', 18);
+      T().chunky(ctx, 110, 220 + mid, 320, 550, 24, '#FFFBF3', { depth: 6 }); T().boldText(ctx, '暂停', W / 2, 272 + mid, 28, '#FFB52E');
+      const ids = ['resume', 'card', 'sound', 'restart', 'home'].concat(this.v3 && this.v3.ok ? ['gfx'] : []);
+      for (const id of ids) this.btn(UI[id], id === 'sound' ? (this.app.muted ? '音效：关' : '音效：开') : id === 'gfx' ? (this.app.gfx === '2d' ? '画面：经典' : '画面：3D') : UI[id].label, id === 'resume', 18);
     }
     // 结算：5 人统一排名逐行揭晓，然后逐个弹出称号
     result() {
@@ -742,6 +827,7 @@
       const { ctx } = this, mid = Math.round((H - 960) / 2), t0 = Math.round(mid * 0.6);
       for (let i = -20; i < 30; i++) { ctx.fillStyle = i % 2 ? '#F6E7D2' : '#F1DFC6'; ctx.beginPath(); const x = i * 40 + (this.time * 10) % 80; ctx.moveTo(x, 0); ctx.lineTo(x + 40, 0); ctx.lineTo(x - 400, H); ctx.lineTo(x - 440, H); ctx.fill(); }
       T().logo(ctx, '摸鱼大作战', W / 2, 66 + mid * 0.3, 46, this.time);
+      { const b = UI.titleSound, on = !this.app.muted; T().chunky(ctx, b.x, b.y, b.w, b.h, 16, on ? '#FFFFFF' : '#F3E6E2', { depth: 3, lineWidth: 2.5 }); this.speakerIcon(b.x + b.w / 2, b.y + b.h / 2, 15, on); }
       ctx.fillStyle = '#8C6B4F'; ctx.font = F(15, true); ctx.textAlign = 'center'; ctx.fillText('1 名老板 + 4 名员工 · 单人试玩版（其他角色由 AI 扮演）', W / 2, 112 + mid * 0.3);
       // 规则板：按内容算高度，放在标题和难度之间
       const rules = [
