@@ -1,23 +1,24 @@
 // 摸鱼大作战：浏览器入口。负责高清缩放、鼠标/触摸/键盘输入、主循环、事件 → 提示与音效。
 (function () {
-  const OS = window.OS, A = OS.arena, canvas = document.getElementById('arena'), V = A.VIEW;
+  const OS = window.OS, A = OS.arena, canvas = document.getElementById('arena'), V0 = A.VIEW;
   let storage = null; try { storage = window.localStorage; storage.getItem('x'); } catch (e) { storage = null; }
   const role = (location.search.match(/[?&]role=(boss|employee)/) || [])[1];   // 测试用：?role=boss / ?role=employee 指定身份
   const app = new A.App({ storage, matchOpts: role ? { playerRole: role } : {} }), r = new A.Renderer(canvas, app);
   const hello = () => { const p = app.match.player; r.toast(p.kind === 'boss' ? '你是老板！' + A.BOSS_ARRIVE.wait + ' 秒后出现在办公区正中间' : '你是' + p.name + '！绿色框是你的工位'); };
   OS.audio.setMuted(app.muted); OS.audio.setMusic(app.music);
 
-  // 画布铺满窗口、保持 16:9，按设备像素比渲染（手机上不糊）
+  // 画布按 9:16 竖屏铺满窗口（电脑上居中、两边留空），按设备像素比渲染（手机上不糊）
   function fit() {
     const cs = getComputedStyle(document.body), px = v => parseFloat(v) || 0;   // 扣掉安全区（刘海、手势条）
     const aw = window.innerWidth - px(cs.paddingLeft) - px(cs.paddingRight), ah = window.innerHeight - px(cs.paddingTop) - px(cs.paddingBottom);
+    const V = A.layout(V0.W * ah / Math.max(1, aw));   // 手机越长，场景越高（960 ~ 1200）
     const k = Math.min(aw / V.W, ah / V.H), dpr = Math.min(3, window.devicePixelRatio || 1);
     canvas.style.width = Math.floor(V.W * k) + 'px'; canvas.style.height = Math.floor(V.H * k) + 'px';
     canvas.width = Math.round(V.W * dpr * Math.max(1, k)); canvas.height = Math.round(V.H * dpr * Math.max(1, k));
   }
   window.addEventListener('resize', fit); fit();
 
-  const toLogic = ev => { const b = canvas.getBoundingClientRect(); return { x: (ev.clientX - b.left) * V.W / b.width, y: (ev.clientY - b.top) * V.H / b.height }; };
+  const toLogic = ev => { const b = canvas.getBoundingClientRect(), V = A.VIEW; return { x: (ev.clientX - b.left) * V.W / b.width, y: (ev.clientY - b.top) * V.H / b.height }; };
   const U = A.UI, hit = (b, p) => A.inside(b, p, 6);   // 按钮四周多留 6 像素，手指更好点
   // 按住地面拖动：角色跟着手指 / 鼠标走（每 0.15 秒更新一次目标）
   let drag = null;
@@ -34,6 +35,7 @@
   canvas.addEventListener('pointerleave', ev => { r.mouse = null; endDrag(ev); });
   canvas.addEventListener('pointerdown', ev => {
     ev.preventDefault(); OS.audio.unlock();
+    if (ev.pointerType === 'touch' || ev.pointerType === 'pen') r.touch = true; else if (ev.pointerType === 'mouse') r.touch = false;   // 手机上不显示键盘提示
     const p = toLogic(ev);
     if (app.screen === 'title') {
       const di = U.diff.find(b => hit(b, p)); if (di) { app.setDifficulty(di.id); OS.audio.play('click'); return; }
@@ -44,14 +46,14 @@
     const m = app.match;
     if (m.phase === 'over') { if (hit(U.again, p)) { app.restart(); OS.audio.setTempo(1); } else if (hit(U.home2, p)) app.toTitle(); return; }
     if (app.paused && app.cardOpen) { app.toggleCard(); return; }   // 身份卡：点任意位置关闭
-    if (app.paused) { if (hit(U.card, p)) app.toggleCard(); else if (hit(U.resume, p)) app.resume(); else if (hit(U.restart, p)) { app.restart(); OS.audio.setTempo(1); } else if (hit(U.home, p)) app.toTitle(); return; }
-    if (hit(U.pause, p)) { app.pause(); return; }
-    if (hit(U.sound, p)) { OS.audio.setMuted(app.toggleMute()); return; }
+    if (app.paused) { if (hit(U.card, p)) app.toggleCard(); else if (hit(U.resume, p)) app.resume(); else if (hit(U.sound, p)) OS.audio.setMuted(app.toggleMute()); else if (hit(U.restart, p)) { app.restart(); OS.audio.setTempo(1); } else if (hit(U.home, p)) app.toTitle(); return; }
+    if (hit(U.gear, p)) { if (m.phase === 'playing') app.pause(); return; }   // 设置：暂停菜单
     if (m.phase === 'prep') { if (hit(U.ready, p)) app.ready(); return; }   // 准备阶段：只有"准备好了"能点
     if (app.hasOffer()) { const i = A.offerRects(m.player.kind === 'boss' ? m.offer.options.length : 2).findIndex(c => hit(c, p)); if (i >= 0) { app.pickOffer(i); return; } }
     if (m.player.kind === 'employee' && hit(U.skill, p)) { app.empSkill(); return; }
     if (m.player.kind === 'boss') { const i = U.bskill.findIndex(c => hit(c, p)); if (i >= 0) { app.bossSkill(i); return; } }
-    if (hit(U.action, p)) { app.act(); return; }
+    if (hit(A.actionRect(m.player.kind), p)) { app.act(); return; }
+    if (p.y < A.VIEW.VY || p.y > A.VIEW.BOT) return;   // 顶栏、按钮区的空白处不算点地图
     // 房间视角：点房间外 = 出门；点房间里 = 在房间里走动
     const w = r.toWorld(p.x, p.y), pl = m.player;
     if (pl.room) {   // 员工和老板在房间里都是房间视角
@@ -94,7 +96,7 @@
         r.toast(ev.reason === 'stay' ? '查房要待满，还剩 ' + Math.ceil(m.boss.stay) + ' 秒' : ev.reason === 'cooldown' ? '刚查过' + ROOM(ev.room) + '，' + Math.ceil(m.boss.cooldowns[ev.room]) + ' 秒后才能再查' : ev.reason === 'lockedDoor' ? '门被锁了，进不去' : '进不去', OS.theme.C.coral);
       } else if (ev.type === 'blocked' && me) {
         const cd = m.player.cooldowns[ev.room];
-        r.toast({ full: ROOM(ev.room) + '满了，换个地方', cooldown: '刚去过' + ROOM(ev.room) + '，还要等 ' + Math.ceil(cd || 0) + ' 秒', locked: ev.room === 'meeting' ? '会议室不能摸鱼' : '那是老板办公室，别进', boss: '老板在' + ROOM(ev.room) + '里面，别进去！', lockedDoor: ROOM(ev.room) + '的门锁着', minStay: '刚进来，至少待满 ' + A.ECON.minStay + ' 秒才能出去' }[ev.reason], OS.theme.C.coral);
+        r.toast({ full: ROOM(ev.room) + '满了，换个地方', cooldown: '刚去过' + ROOM(ev.room) + '，还要等 ' + Math.ceil(cd || 0) + ' 秒', locked: '会议室不能摸鱼', boss: '老板在' + ROOM(ev.room) + '里面，别进去！', lockedDoor: ROOM(ev.room) + '的门锁着', minStay: '刚进来，至少待满 ' + A.ECON.minStay + ' 秒才能出去' }[ev.reason], OS.theme.C.coral);
       }
       if (ev.type === 'enter' && me) { r.toast('开始在' + ROOM(ev.room) + '摸鱼' + (ev.lure >= 1.05 ? '（空房 ×' + ev.lure.toFixed(1) + '）' : '')); OS.audio.play('click'); }
       if (ev.type === 'check' && m.player.kind === 'boss' && !ev.caught.length) r.toast(ROOM(ev.room) + '里没人，有点尴尬', '#8C6B4F');

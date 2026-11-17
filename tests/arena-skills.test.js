@@ -71,6 +71,7 @@ test('临时会议：随机拉走一个正在摸鱼的人开会 8 秒（口袋�
   assert.strictEqual(m.moveTo(p, 12, 7), false); assert.strictEqual(m.moveTo(b, 12, 7), false);
   tick(m, 8.1); assert.strictEqual(p.meetingT, 0); assert.ok(p.immuneT > 4);
   assert.ok(!m.grid.cellAt(p.x, p.y).room, '回到会议室门外');
+  const ro = m.grid.outside('restroom'); p.x = ro.x; p.y = ro.y + 0.5;   // 2.1.0 地图大了：直接站到厕所门口，免得走过去免抓已经过了
   b.cooldowns.restroom = 0; enter(m, p, 'restroom'); m.drainEvents(); bossInto(m, 'restroom');
   assert.ok(!m.drainEvents().some(e => e.type === 'caught'), '免抓期间不被抓');
 });
@@ -176,8 +177,7 @@ test('画面：技能按钮、阶段选技能卡、升级方向卡、补给、�
   assert.ok(!texts.includes('替身'), '老板看到的替身没有标签');
   const app2 = new A.App({ prep: 0, rng: mulberry32(2), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', employeeAI: false, bossAI: false } }), r2 = new A.Renderer(canvas, app2);
   const m2 = app2.start(), p = m2.player; texts.length = 0; r2.draw(0.016);
-  assert.ok(texts.some(t => /^E  锁门/.test(t)) && texts.includes('进了房间才能用') && texts.some(t => /Lv1$/.test(t)));
+  assert.ok(texts.includes('锁门') && texts.includes('进房间才能用') && texts.some(t => /Lv1 \$0\/150$/.test(t)));
   m2.levelUp(p, 'manual'); texts.length = 0; r2.draw(0.016); assert.ok(texts.some(t => /^升到 Lv2：锁门选一个方向/.test(t)) && texts.includes('1  双重门锁'));
   assert.ok(app2.pickOffer(1)); assert.strictEqual(p.branch, 'B');
-  assert.ok(texts.some(t => /^第 1 \/ 3 阶段$/.test(t)), '开局前也显示第 1 阶段');
 });

@@ -13,7 +13,7 @@ function enter(m, a, id) { const p = center(m, id); assert.ok(m.moveTo(a, p.x, p
 test('地图：每行等宽，3 个摸鱼房间、门和工位都在', () => {
   assert.ok(A.MAP.every(r => r.length === A.COLS) && A.MAP.length === A.ROWS);
   const g = A.buildGrid(A.MAP);
-  for (const id of ['restroom', 'pantry', 'rooftop', 'meeting', 'boss']) { assert.ok(g.doors[id], id + ' 有门'); assert.ok(g.outside(id), id + ' 门外是办公区'); }
+  for (const id of ['restroom', 'pantry', 'rooftop', 'meeting']) { assert.ok(g.doors[id], id + ' 有门'); assert.ok(g.outside(id), id + ' 门外是办公区'); }
   assert.deepStrictEqual(A.SLACK_ROOMS, ['restroom', 'pantry', 'rooftop']);
   assert.strictEqual(A.SLACK_ROOMS.reduce((s, r) => s + A.ROOMS[r].cap, 0), 5, '5 个位置给 4 名员工');
   for (const d of A.DESKS) { const s = A.seatOf(d), k = g.cellAt(s.x, s.y); assert.ok(k && !k.wall && !k.room, '座位在办公区'); assert.ok(g.at(d.c, d.r).desk && g.at(d.c + 1, d.r).desk); }
@@ -27,12 +27,12 @@ test('开局：1 名玩家员工 + 3 名员工 + 老板，各自固定在不同�
   const p = newMatch().player; assert.strictEqual(p.id, 'rabbit'); assert.strictEqual(p.desk.id, 0);
 });
 
-test('寻路：员工能走到 3 个摸鱼房间，进不了会议室和老板办公室', () => {
+test('寻路：员工能走到 3 个摸鱼房间，进不了会议室（2.1.0 起没有老板办公室）', () => {
   const m = newMatch(), a = m.player;
   for (const id of A.SLACK_ROOMS) { const p = center(m, id); assert.ok(A.findPath(m.grid, a.x, a.y, p.x, p.y, k => m.canPass(a, k)), id); }
   assert.strictEqual(m.moveTo(a, ...Object.values(center(m, 'meeting'))), false);
   assert.deepStrictEqual(m.drainEvents().pop(), { type: 'blocked', who: 'rabbit', room: 'meeting', reason: 'locked' });
-  assert.strictEqual(m.moveTo(a, ...Object.values(center(m, 'boss'))), false);
+  assert.ok(!A.ROOMS.boss && !m.grid.doors.boss, '没有老板办公室');
 });
 
 test('收入曲线：先爬升到峰值再递减，到最长停留回落到 35%', () => {
@@ -147,10 +147,10 @@ test('画面：标题、办公区全图、房间视角（外面变暗、只画�
   const texts = [], app = new A.App({ prep: 0, rng: mulberry32(2), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'bear', playerDesk: 0, time: 30, employeeAI: false } }), r = new A.Renderer(fakeCanvas(texts), app);
   r.draw(0.016); assert.ok(texts.includes('开始'));
   const m = app.start(); texts.length = 0; r.draw(0.016);
-  assert.ok(texts.includes('存款排行') && texts.includes('我的工位') && texts.some(t => /^回工位/.test(t)));
+  assert.ok(texts.includes('我的工位') && texts.some(t => /^回工位/.test(t)) && !texts.includes('存款排行'), '竖屏版不显示实时排行');
   const p = m.player; enter(m, p, 'restroom'); texts.length = 0; r.draw(0.016);
   assert.strictEqual(r.cam.room, 'restroom'); assert.ok(r.cam.s > A.VIEW.TS, '房间视角放大');
-  assert.ok(texts.includes('在厕所摸鱼中') && texts.some(t => /^还要待 \d 秒$/.test(t)) && texts.some(t => /^最少停留：还剩/.test(t)) && !texts.includes('存款排行'));
+  assert.ok(texts.includes('在厕所摸鱼中') && texts.some(t => /^还要待 \d 秒$/.test(t)) && texts.some(t => /^至少再待 \d 秒$/.test(t)));
   assert.ok(!texts.includes('兔子') && !texts.includes('老板'), '房间外的人不画');
   const w = r.toWorld(r.sx(3.5), r.sy(2.5)); assert.ok(Math.abs(w.x - 3.5) < 1e-9 && Math.abs(w.y - 2.5) < 1e-9);
   app.pause(); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('重新开始'));
@@ -161,8 +161,8 @@ test('画面：标题、办公区全图、房间视角（外面变暗、只画�
 test('连摸加成：不回工位连续进第 2、3 间，存钱时整个口袋 ×1.2、×1.4（封顶 ×1.8），存完清零', () => {
   assert.strictEqual(A.comboMult(1), 1); assert.ok(Math.abs(A.comboMult(2) - 1.2) < 1e-9); assert.ok(Math.abs(A.comboMult(3) - 1.4) < 1e-9); assert.strictEqual(A.comboMult(9), 1.8);
   const m = newMatch({ playerDesk: 1 }), a = m.player;
-  enter(m, a, 'restroom'); tick(m, 4.1); m.exitRoom(a); tick(m, 1.5); assert.strictEqual(a.combo, 1);
-  enter(m, a, 'pantry'); tick(m, 4.1); m.exitRoom(a); tick(m, 1.5); assert.strictEqual(a.combo, 2);
+  enter(m, a, 'restroom'); tick(m, 4.1); m.exitRoom(a); tick(m, 3); assert.strictEqual(a.combo, 1);
+  enter(m, a, 'pantry'); tick(m, 4.1); m.exitRoom(a); tick(m, 3); assert.strictEqual(a.combo, 2);
   const pocket = a.pocket, bank = a.banked; m.drainEvents(); m.goDesk(a); tick(m, 8);
   const ev = m.drainEvents().find(e => e.type === 'deposit'); assert.ok(ev);
   assert.ok(Math.abs(ev.amount - pocket * 1.2) < 1e-6 && Math.abs(ev.mult - 1.2) < 1e-9);

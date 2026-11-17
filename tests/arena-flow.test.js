@@ -54,7 +54,7 @@ test('结算称号：按数据评出，没人符合就不发，最多 4 个，�
   const m2 = quiet(); m2.boss.stats.empty = T.bossEmpty; m2.employees()[1].stats.picks = T.picks;
   assert.deepStrictEqual(m2.awards().map(w => w.title), ['补给猎人', '白跑王']);
   a.stats.roomTime.restroom = T.restroom - 1; assert.ok(!m.awards().some(w => w.title === '厕所钉子户'), '不到门槛不发');
-  const m3 = quiet(), p = m3.player; enter(m3, p, 'restroom'); tick(m3, 4.1); m3.exitRoom(p); tick(m3, 1.5); enter(m3, p, 'pantry'); tick(m3, 4.1); m3.exitRoom(p); tick(m3, 1.5); m3.goDesk(p); tick(m3, 8);
+  const m3 = quiet(), p = m3.player; enter(m3, p, 'restroom'); tick(m3, 4.1); m3.exitRoom(p); tick(m3, 3); enter(m3, p, 'pantry'); tick(m3, 4.1); m3.exitRoom(p); tick(m3, 3); m3.goDesk(p); tick(m3, 8);
   assert.ok(Math.abs(p.stats.maxCombo - 1.2) < 1e-9, '记录最高连摸倍数');
 });
 
@@ -86,39 +86,39 @@ test('画面：员工/老板身份卡、倒数、下班冲刺标签、暂停菜�
   const texts = [], canvas = fakeCanvas(texts);
   const app = new A.App({ rng: mulberry32(3), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', employeeAI: false, bossAI: false, time: 40 } }), r = new A.Renderer(canvas, app);
   const m = app.start(); texts.length = 0; r.draw(0.016);
-  assert.ok(texts.includes('你是员工') && texts.includes('猫头鹰') && texts.includes('准备好了 [空格]') && texts.includes('我的工位') && texts.includes('E  锁门'));
-  assert.ok(texts.some(t => /^20 秒后自动开始$/.test(t)) && texts.some(t => /^1 人 · \$9\/s$/.test(t)));
-  app.ready(); app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('3') && !texts.includes('准备好了 [空格]'));
+  assert.ok(texts.includes('你是员工') && texts.some(t => /^猫头鹰 · 工位 \d$/.test(t)) && texts.some(t => /^准备好了/.test(t)) && texts.includes('我的工位') && texts.some(t => /^技能：锁门/.test(t)));
+  assert.ok(texts.some(t => /^20 秒后自动开始$/.test(t)) && ['厕所', '茶水间', '天台', '会议室'].every(n => texts.includes(n)), '小地图标出四个房间');
+  app.ready(); app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('3') && !texts.some(t => /^准备好了/.test(t)));
   for (let i = 0; i < 20; i++) app.tick(0.25);
   assert.strictEqual(m.phase, 'playing'); r.banner('开始摸鱼！'); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('开始摸鱼！') && !texts.includes('你是员工'));
-  for (let i = 0; i < 45; i++) app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('下班冲刺 · 收入 ×2'));
+  for (let i = 0; i < 45; i++) app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('冲刺 · 收入 ×2'));
   app.pause(); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('查看身份卡'));
   assert.ok(app.toggleCard()); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('你是员工') && texts.includes('点任意位置关闭'));
   app.resume(); assert.strictEqual(app.cardOpen, false);
   m.employees()[1].stats.roomTime.restroom = 60; for (let i = 0; i < 200; i++) app.tick(0.25);
   assert.strictEqual(m.phase, 'over'); texts.length = 0; r.draw(0.016); assert.ok(!texts.includes('厕所钉子户'), '先揭晓排名');
-  r.draw(3); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('厕所钉子户') && texts.some(t => /^本局：查房/.test(t)));
+  r.draw(3); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('厕所钉子户') && texts.some(t => /^查房 \d+ 次/.test(t)));
   const appB = new A.App({ rng: mulberry32(3), matchOpts: { bossWait: 0, playerRole: 'boss', employeeAI: false } }), rB = new A.Renderer(canvas, appB);
   appB.start(); texts.length = 0; rB.draw(0.016);
-  assert.ok(texts.includes('你是老板') && texts.includes('狮子老板') && texts.includes('你从这里出发') && texts.some(t => /^怒气：每秒 \+1/.test(t)));
+  assert.ok(texts.includes('你是老板') && texts.includes('狮子老板') && texts.includes('★') && texts.some(t => /用怒气释放/.test(t)));
 });
 
-test('老板开局：在办公室等 5 秒（不能动、不能放技能、看不见外面），然后直接出现在办公区正中间', () => {
+test('老板开局：先等 5 秒（不在地图上、不能动、不能放技能、看不见外面），然后直接出现在办公区正中间', () => {
   const m = new A.Match({ rng: mulberry32(5), playerRole: 'boss', employeeAI: false }), b = m.boss; m.supplyT = 1e9;
-  assert.strictEqual(b.waitT, A.BOSS_ARRIVE.wait); assert.strictEqual(m.grid.cellAt(b.x, b.y).room, 'boss');
+  assert.strictEqual(b.waitT, A.BOSS_ARRIVE.wait); assert.ok(!A.ROOMS.boss, '2.1.0 起没有老板办公室');
   m.update(1 / 60); assert.ok(m.offer, '等待时就能选技能'); m.pickBossSkill(m.offer.options[0]);
   assert.strictEqual(m.moveTo(b, 12, 7), false); b.anger = 100; assert.strictEqual(m.useBossSkill(b.skills[0], 'pantry'), false);
-  tick(m, 4.5); assert.strictEqual(m.grid.cellAt(b.x, b.y).room, 'boss'); m.drainEvents();
+  tick(m, 4.5); assert.ok(b.waitT > 0); m.drainEvents();
   tick(m, 0.6); assert.strictEqual(b.waitT, 0); assert.deepStrictEqual([b.x, b.y], [A.BOSS_ARRIVE.x, A.BOSS_ARRIVE.y]);
   assert.ok(m.drainEvents().some(e => e.type === 'bossArrive')); const k = m.grid.cellAt(b.x, b.y); assert.ok(!k.wall && !k.room);
   assert.ok(m.moveTo(b, 12, 6.5));
-  // 办公区正中间到三个房间门口的路程差不多（比从老板办公室出发均匀）
+  // 办公区正中间到三个房间门口的路程差不多
   const pass = c => m.canPass(b, c), dist = (sx, sy, id) => { const o = m.grid.outside(id); let d = 0, x = sx, y = sy; for (const q of A.findPath(m.grid, sx, sy, o.x, o.y, pass)) { d += Math.hypot(q.x - x, q.y - y); x = q.x; y = q.y; } return d; };
-  const mid = A.SLACK_ROOMS.map(id => dist(A.BOSS_ARRIVE.x, A.BOSS_ARRIVE.y, id)), old = A.SLACK_ROOMS.map(id => dist(4.5, 8.5, id));
-  assert.ok(Math.max(...mid) - Math.min(...mid) < Math.max(...old) - Math.min(...old), '中间出发更均匀：' + mid.map(v => v.toFixed(1)) + ' vs ' + old.map(v => v.toFixed(1)));
+  const mid = A.SLACK_ROOMS.map(id => dist(A.BOSS_ARRIVE.x, A.BOSS_ARRIVE.y, id));
+  assert.ok(Math.max(...mid) - Math.min(...mid) < 2.5, '中间出发到三扇门差不多远：' + mid.map(v => v.toFixed(1)));
 });
 
-test('老板等待期间：AI 老板不动；老板视角是办公室特写；员工视角屏幕中间"老板还有 N 秒到达"', () => {
+test('老板等待期间：AI 老板不动；老板视角整个场景暗下来；员工视角屏幕中间"老板还有 N 秒到达"', () => {
   const m = new A.Match({ rng: mulberry32(6), playerRole: 'employee' }), b = m.boss; tick(m, 3);
   assert.deepStrictEqual([b.x, b.y], [A.BOSS_SPAWN.x, A.BOSS_SPAWN.y]);
   const texts = [], canvas = fakeCanvas(texts);
@@ -126,8 +126,8 @@ test('老板等待期间：AI 老板不动；老板视角是办公室特写；�
   app.start(); app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.some(t => /^老板还有 [45] 秒到达$/.test(t)));
   const appB = new A.App({ prep: 0, rng: mulberry32(2), matchOpts: { playerRole: 'boss', employeeAI: false } }), rB = new A.Renderer(canvas, appB);
   appB.start(); appB.tick(0.25); appB.match.offer = null; texts.length = 0; rB.draw(0.016);
-  assert.strictEqual(rB.cam.room, 'boss'); assert.ok(texts.includes('在老板办公室里') && texts.some(t => /秒后出现在办公区正中间$/.test(t)));
-  for (let i = 0; i < 25; i++) appB.tick(0.25); texts.length = 0; rB.draw(0.016); assert.strictEqual(rB.cam.room, null, '出来后看全图');
+  assert.ok(texts.includes('老板还在路上') && texts.some(t => /秒后出现在办公区正中间$/.test(t)));
+  for (let i = 0; i < 25; i++) appB.tick(0.25); texts.length = 0; rB.draw(0.016); assert.ok(!texts.includes('老板还在路上') && texts.includes('老板（你）'), '到了以后看得到自己');
 });
 
 test('抓人收益逐次递增：同一次查房抓到两个人，分别算第 N 次和第 N+1 次', () => {
@@ -143,8 +143,8 @@ test('最少停留 4 秒：刚进房间出不去（按钮/空格/点外面/走�
   const m = quiet({ bossWait: 0 }), p = m.player; enter(m, p, 'pantry'); m.drainEvents();
   assert.ok(m.mustStay(p)); assert.strictEqual(m.exitRoom(p), false); assert.strictEqual(m.action(p), false);
   assert.strictEqual(m.moveTo(p, 12, 7), false); assert.strictEqual(m.drainEvents().pop().reason, 'minStay');
-  m.setDir(p, 0, 1); tick(m, 2); assert.strictEqual(p.room, 'pantry', '走到门口也出不去'); m.setDir(p, 0, 0);
-  tick(m, 2.1); assert.ok(!m.mustStay(p)); assert.ok(m.exitRoom(p)); tick(m, 1.5); assert.strictEqual(p.room, null);
+  m.setDir(p, 1, 0); tick(m, 2); assert.strictEqual(p.room, 'pantry', '走到门口也出不去'); m.setDir(p, 0, 0);
+  tick(m, 2.1); assert.ok(!m.mustStay(p)); assert.ok(m.exitRoom(p)); tick(m, 3); assert.strictEqual(p.room, null);
   const m2 = quiet({ bossWait: 0 }), q = m2.player; enter(m2, q, 'restroom'); bossInto(m2, 'restroom');
   assert.ok(q.forced); tick(m2, 2); assert.strictEqual(q.room, null, '被抓后照样自动出门');
   const m3 = quiet({ bossWait: 0 }), r = m3.player; enter(m3, r, 'pantry'); m3.boss.skills = ['meeting']; m3.boss.anger = 100;
@@ -153,12 +153,12 @@ test('最少停留 4 秒：刚进房间出不去（按钮/空格/点外面/走�
 
 test('只有主动操作才存钱：路过或站在工位上不存；空格/回工位/点自己的桌子才存；半路点别处取消', () => {
   const m = quiet({ bossWait: 0, playerDesk: 0 }), p = m.player, seat = A.seatOf(p.desk);
-  enter(m, p, 'restroom'); tick(m, 5); m.exitRoom(p); tick(m, 1.5); const pocket = p.pocket; assert.ok(pocket > 0);
+  enter(m, p, 'restroom'); tick(m, 5); m.exitRoom(p); tick(m, 3); const pocket = p.pocket; assert.ok(pocket > 0);
   m.moveTo(p, seat.x, seat.y + 0.1); tick(m, 6); assert.ok(Math.hypot(p.x - seat.x, p.y - seat.y) < 0.75);
   assert.strictEqual(p.pocket, pocket, '站在工位上不自动存');
   assert.ok(m.action(p)); m.drainEvents(); tick(m, 0.2); assert.strictEqual(p.pocket, 0, '空格立刻存');
   assert.ok(m.drainEvents().some(e => e.type === 'deposit'));
-  const m2 = quiet({ bossWait: 0, playerDesk: 1 }), q = m2.player; enter(m2, q, 'pantry'); tick(m2, 5); m2.exitRoom(q); tick(m2, 1.5);
-  assert.ok(m2.goDesk(q)); tick(m2, 0.3); m2.moveTo(q, 4.5, 5.5); tick(m2, 8); assert.ok(q.pocket > 0, '半路改走别处：取消存钱');
+  const m2 = quiet({ bossWait: 0, playerDesk: 1 }), q = m2.player; enter(m2, q, 'pantry'); tick(m2, 5); m2.exitRoom(q); tick(m2, 3);
+  assert.ok(m2.goDesk(q)); tick(m2, 0.3); m2.moveTo(q, 10.5, 21.5); tick(m2, 8); assert.ok(q.pocket > 0, '半路改走别处：取消存钱');
   const d = q.desk; assert.ok(m2.moveTo(q, d.c + 0.5, d.r + 0.5), '点自己的桌子'); tick(m2, 8); assert.strictEqual(q.pocket, 0);
 });

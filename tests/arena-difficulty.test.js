@@ -17,23 +17,31 @@ test('三档难度都有，默认普通；Match 把难度交给 AI 老板', () =
   assert.strictEqual(A.DIFFICULTY.easy.track, false); assert.ok(A.DIFFICULTY.hard.smart > A.DIFFICULTY.normal.smart && A.DIFFICULTY.normal.wrong > A.DIFFICULTY.hard.wrong);
 });
 
-test('普通 / 困难：老板在办公区看到员工走进哪扇门就记下来；简单不记', () => {
+// 把老板放到某扇门附近（门在视野里）
+const near = (m, id, dx, dy) => { const o = m.grid.outside(id); m.boss.x = o.x + dx; m.boss.y = o.y + dy; m.boss.path = []; };
+test('普通 / 困难：老板在办公区亲眼看到员工走进哪扇门就记下来；简单不记', () => {
   for (const d of ['normal', 'hard']) {
     const m = mk(d, { rng: mulberry32(2) }), p = m.player; m.bossAI.d = Object.assign({}, m.bossAI.d, { wrong: 0 });
-    m.boss.path = []; m.bossAI.t = 99; walkIn(m, p, 'pantry'); tick(m, 0.1);
+    near(m, 'pantry', 3, 0); m.bossAI.t = 99; m.bossAI.wander = 99; walkIn(m, p, 'pantry'); tick(m, 0.1);
     assert.strictEqual(m.bossAI.belief[p.id].room, 'pantry', d);
     tick(m, 4); m.exitRoom(p); tick(m, 6); assert.strictEqual(m.bossAI.belief[p.id], undefined, d + '：出来了就清掉');
   }
   const e = mk('easy'), q = e.player; e.bossAI.t = 99; walkIn(e, q, 'pantry'); tick(e, 0.1); assert.deepStrictEqual(e.bossAI.belief, {});
 });
 
-test('老板在房间里看不到外面：这时候进房间的人不知道去了哪（room = null）', () => {
+test('视野外的事老板不知道：门不在视野里时有人进去，什么也不记', () => {
+  const m = mk('hard'), p = m.player, ai = m.bossAI; ai.t = 99; ai.wander = 99; m.boss.path = [];
+  assert.ok(!A.inSight(m.boss, m.grid.outside('pantry').x, m.grid.outside('pantry').y), '从正中间看不到茶水间门');
+  walkIn(m, p, 'pantry'); tick(m, 0.2); assert.strictEqual(ai.belief[p.id], undefined);
+});
+
+test('老板在房间里看不到外面：这时候进房间的人，出来后也不知道去了哪', () => {
   const m = mk('hard'), p = m.player, b = m.boss, ai = m.bossAI; ai.t = 99;
   const c = m.grid.roomCells('rooftop').slice(-1)[0]; m.pathTo(b, c.c + 0.5, c.r + 0.5); ai.mode = 'go'; ai.target = 'rooftop';
   for (let i = 0; i < 2400 && b.room !== 'rooftop'; i++) m.update(1 / 60); assert.strictEqual(b.room, 'rooftop');
   walkIn(m, p, 'restroom'); assert.strictEqual(ai.belief[p.id], undefined, '在房间里看不到');
   for (let i = 0; i < 1200 && b.room; i++) m.update(1 / 60); tick(m, 0.2);
-  assert.ok(ai.belief[p.id] && ai.belief[p.id].room === null, '出来后发现人不见了，但不知道去了哪');
+  assert.ok(!ai.belief[p.id] || ai.belief[p.id].room !== 'restroom', '出来后也不知道他在厕所');
 });
 
 test('猫的替身骗过 AI 老板：放了替身再进房间，老板以为猫还在工位', () => {
@@ -45,7 +53,7 @@ test('猫的替身骗过 AI 老板：放了替身再进房间，老板以为猫�
 test('困难：优先查推算出有人的房间（不读房间里的真实人数）', () => {
   let hits = 0;
   for (let s = 1; s <= 12; s++) {
-    const m = mk('hard', { rng: mulberry32(s) }), p = m.player, ai = m.bossAI; ai.t = 99;
+    const m = mk('hard', { rng: mulberry32(s) }), p = m.player, ai = m.bossAI; ai.t = 99; ai.wander = 99; near(m, 'rooftop', 2, -2);
     walkIn(m, p, 'rooftop'); tick(m, 6); ai.t = 0; ai.mode = 'idle';
     let target = null; for (let i = 0; i < 600 && !target; i++) { m.update(1 / 60); if (ai.mode === 'go') target = ai.target; }
     if (target === 'rooftop') hits++;

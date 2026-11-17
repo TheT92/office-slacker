@@ -125,25 +125,35 @@
     }
   }
   // 老板：狮子（鬃毛 + 领带），体型大一圈
+  // o.vivid：醒目版（摸鱼大作战 2.1.0）——深藏青西装、亮红宽领带、深色鬃毛、粗眉；o.outline：外圈加一道深色描边（像素宽）
+  // o.ink：内部用——把整个轮廓涂成一种颜色、每个形状外扩 o.grow 像素（用来画描边）
   function drawBoss(ctx, x, y, s, o) {
-    o = o || {}; const t = o.t || 0, R = 15 * s, hy = y - 13 * s, look = o.look || 0;
+    o = o || {};
+    if (o.outline && !o.ink) drawBoss(ctx, x, y, s, Object.assign({}, o, { ink: '#3A2E26', grow: o.outline }));
+    const t = o.t || 0, R = 15 * s, hy = y - 13 * s, look = o.look || 0, ink = o.ink, g = ink ? o.grow || 0 : 0, v = o.vivid;
+    const P = col => ink || col;
+    const suit = v ? '#2B3448' : '#5B6577', tie = v ? '#E0453A' : '#E8746A', m1 = v ? '#B5602A' : '#C9793E', m2 = v ? '#C9793E' : '#D98C4A';
     ctx.save();
-    ctx.globalAlpha = 0.2; ellipse(ctx, x, y + 16 * s, 15 * s, 4 * s, '#5A4636'); ctx.globalAlpha = 1;
+    if (!ink) { ctx.globalAlpha = 0.2; ellipse(ctx, x, y + 16 * s, 15 * s, 4 * s, '#5A4636'); ctx.globalAlpha = 1; }
     // 西装 + 领带
-    ellipse(ctx, x, y + 5 * s, 13 * s, 12 * s, '#5B6577');
-    ctx.beginPath(); ctx.moveTo(x - 4 * s, y - 5 * s); ctx.lineTo(x + 4 * s, y - 5 * s); ctx.lineTo(x, y + 2 * s); ctx.closePath(); ctx.fillStyle = '#FFFFFF'; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(x, y - 3 * s); ctx.lineTo(x + 2.6 * s, y + 6 * s); ctx.lineTo(x, y + 10 * s); ctx.lineTo(x - 2.6 * s, y + 6 * s); ctx.closePath(); ctx.fillStyle = '#E8746A'; ctx.fill();
-    for (const d of [-1, 1]) circle(ctx, x + d * 12 * s, y + 6 * s, 3.8 * s, '#E9B872');
+    ellipse(ctx, x, y + 5 * s, 13 * s + g, 12 * s + g, P(suit));
+    if (!ink) {
+      ctx.beginPath(); ctx.moveTo(x - 4 * s, y - 5 * s); ctx.lineTo(x + 4 * s, y - 5 * s); ctx.lineTo(x, y + 2 * s); ctx.closePath(); ctx.fillStyle = '#FFFFFF'; ctx.fill();
+      const tw = v ? 3.4 : 2.6, tl = v ? 11 : 10;
+      ctx.beginPath(); ctx.moveTo(x, y - 3 * s); ctx.lineTo(x + tw * s, y + 6 * s); ctx.lineTo(x, y + tl * s); ctx.lineTo(x - tw * s, y + 6 * s); ctx.closePath(); ctx.fillStyle = tie; ctx.fill();
+    }
+    for (const d of [-1, 1]) circle(ctx, x + d * 12 * s, y + 6 * s, 3.8 * s + g, P('#E9B872'));
     // 鬃毛
-    for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; circle(ctx, x + look + Math.cos(a) * R * 1.05, hy + Math.sin(a) * R * 1.05, R * 0.42, k % 2 ? '#C9793E' : '#D98C4A'); }
-    circle(ctx, x + look, hy, R, '#F1C27D');
-    for (const d of [-1, 1]) circle(ctx, x + look + d * R * 0.72, hy - R * 0.72, R * 0.22, '#F1C27D');
+    for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; circle(ctx, x + look + Math.cos(a) * R * 1.05, hy + Math.sin(a) * R * 1.05, R * 0.42 + g, P(k % 2 ? m1 : m2)); }
+    circle(ctx, x + look, hy, R + g, P('#F1C27D'));
+    for (const d of [-1, 1]) circle(ctx, x + look + d * R * 0.72, hy - R * 0.72, R * 0.22 + g, P('#F1C27D'));
+    if (ink) { ctx.restore(); return; }
     ellipse(ctx, x + look, hy + R * 0.4, R * 0.45, R * 0.3, '#FBE3BC');
     // 眉毛（严肃）+ 眼睛
-    ctx.strokeStyle = INK; ctx.lineWidth = 1.8 * s; ctx.lineCap = 'round';
+    ctx.strokeStyle = INK; ctx.lineWidth = (v ? 2.4 : 1.8) * s; ctx.lineCap = 'round';
     for (const d of [-1, 1]) {
       const ex = x + look * 1.3 + d * R * 0.36;
-      ctx.beginPath(); ctx.moveTo(ex - d * R * 0.2, hy - R * 0.32); ctx.lineTo(ex + d * R * 0.12, hy - R * 0.22); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex - d * R * (v ? 0.22 : 0.2), hy - R * (v ? 0.36 : 0.32)); ctx.lineTo(ex + d * R * 0.12, hy - R * (v ? 0.2 : 0.22)); ctx.stroke();
       if (o.mood === 'read') { ctx.beginPath(); ctx.moveTo(ex - R * 0.1, hy); ctx.lineTo(ex + R * 0.1, hy); ctx.stroke(); }
       else circle(ctx, ex, hy - R * 0.02, R * 0.1, INK);
     }

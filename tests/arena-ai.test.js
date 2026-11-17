@@ -90,14 +90,14 @@ test('AI 员工在房间里看不到外面：老板就站在门口，它也照�
   assert.ok(Math.abs(rt - plan) < 0.1, '按计划 ' + plan.toFixed(2) + ' 秒出门，实际 ' + rt.toFixed(2));
 });
 
-test('画面：老板视角看不见房间里的人、门牌不显示人数、工位显示"不在"；员工视角显示空房倍率和工资变低提示', () => {
+test('画面：老板视角看不见房间里的人、门牌不显示人数、工位显示"不在"；员工视角显示空房倍率和"工资变低了"', () => {
   ['render/theme', 'render/sprites', 'arena/app', 'arena/render'].forEach(m => require('../src/' + m + '.js'));
   const texts = [], ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)) }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
   const canvas = { width: 960, height: 540, getContext: () => ctx };
   const app = new A.App({ prep: 0, rng: mulberry32(6), matchOpts: { bossWait: 0, playerRole: 'boss', employeeAI: false } }), r = new A.Renderer(canvas, app);
   const m = app.start(), e = m.employees()[0]; enter(m, e, 'restroom'); tick(m, 1);
   texts.length = 0; r.draw(0.016);
-  assert.ok(texts.includes('老板（你）') && texts.some(t => /^收益 \$0$/.test(t)) && !texts.includes('存款排行') && texts.includes('点房间去查房'));
+  assert.ok(texts.includes('老板（你）') && texts.includes('$0') && !texts.includes('存款排行') && texts.includes('点房间门去查房'));
   assert.ok(!texts.includes(e.name), '房间里的员工不画（排行里的名字带序号）');
   assert.ok(texts.includes(e.name + ' · 不在'), '工位显示不在');
   assert.ok(!texts.some(t => /^厕所 \d\/1/.test(t)), '门牌不显示人数');
@@ -107,7 +107,7 @@ test('画面：老板视角看不见房间里的人、门牌不显示人数、�
   const app2 = new A.App({ prep: 0, rng: mulberry32(6), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'cat', playerDesk: 1, employeeAI: false, bossAI: false } }), r2 = new A.Renderer(canvas, app2);
   const m2 = app2.start(); tick(m2, 21); texts.length = 0; r2.draw(0.016);
   assert.ok(texts.some(t => /^茶水间 0\/2 ×1\.6$/.test(t)), '空房倍率');
-  assert.ok(texts.some(t => /办公区工资降到 \$0\.3\/秒/.test(t)));
+  assert.ok(texts.includes('工资变低了'));
 });
 
 test('老板也上排行榜：收益 = 每次没收 × 当次倍数（×1、×1.1、×1.2、之后 ×1.3），和员工一起排名；不提前结束', () => {
@@ -120,7 +120,7 @@ test('老板也上排行榜：收益 = 每次没收 × 当次倍数（×1、×1.
   tick(m, 10); assert.strictEqual(m.phase, 'over');
 });
 
-test('老板进了房间也看不到外面：切换成房间视角，别的员工不画，门牌倍率看不到', () => {
+test('老板进了房间也看不到外面：切换成房间视角，别的员工不画', () => {
   ['render/theme', 'render/sprites', 'arena/app', 'arena/render'].forEach(m => require('../src/' + m + '.js'));
   const texts = [], ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)) }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
   const app = new A.App({ prep: 0, rng: mulberry32(6), matchOpts: { bossWait: 0, playerRole: 'boss', employeeAI: false } }), r = new A.Renderer({ width: 960, height: 540, getContext: () => ctx }, app);
@@ -128,6 +128,6 @@ test('老板进了房间也看不到外面：切换成房间视角，别的员�
   m.moveTo(b, c.c + 0.5, c.r + 0.5); for (let i = 0; i < 2400 && b.room !== 'restroom'; i++) m.update(1 / 60);
   texts.length = 0; r.draw(0.016);
   assert.strictEqual(r.cam.room, 'restroom');
-  assert.ok(texts.includes('在厕所查房') && texts.some(t => /^职场边界感：还要待/.test(t)) && texts.includes('可以查 · 倍率看不到'));
+  assert.ok(texts.includes('在厕所查房') && texts.some(t => /^职场边界感：还要待/.test(t)));
   assert.ok(!m.employees().some(e => texts.includes(e.name)), '外面的员工不画');
 });

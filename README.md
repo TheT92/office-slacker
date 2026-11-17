@@ -4,7 +4,8 @@
 
 ## 运行
 - 直接双击 `index.html`（无需服务器、无需构建，不依赖第三方库）。
-- 新模式「摸鱼大作战」（1 老板 + 4 员工，2.0.0：A1–A6 全部完成，标题页可选 AI 老板难度；`arena.html?role=boss` 直接当老板）。员工按 `E` 放技能，老板按 `1/2/3`：选关页右上角按钮进入，或直接打开 `arena.html`。电脑点击/WASD 移动、空格出门或回工位；手机横屏点哪走哪。
+- 新模式「摸鱼大作战」（1 老板 + 4 员工，2.1.0 起竖屏、主推手机，标题页可选 AI 老板难度；`arena.html?role=boss` 直接当老板）。员工按 `E` 放技能，老板按 `1/2/3`：选关页右上角按钮进入，或直接打开 `arena.html`。电脑点击/WASD 移动、空格出门或回工位；手机竖屏点哪走哪。
+- 在线试玩（GitHub Pages）：https://thet92.github.io/office-slacker/ ，摸鱼大作战：https://thet92.github.io/office-slacker/arena.html
 - URL 末尾加 `?debug` 可显示老板状态调试信息。
 
 ## 操作

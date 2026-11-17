@@ -94,33 +94,33 @@ test('简单难度的 AI 老板完全随机（不看任何人、不用监控技�
 });
 
 test('员工走到半路老板先进去了：被弹回门外，不算被抓', () => {
-  const m = mk(), p = m.player;
+  const m = mk(), p = m.player, o = m.grid.outside('restroom'); m.boss.x = o.x; m.boss.y = o.y + 1;   // 老板就在门口
   const c = m.grid.roomCells('restroom')[0]; assert.ok(m.moveTo(p, c.c + 0.5, c.r + 0.5));
   bossInto(m, 'restroom'); m.drainEvents(); tick(m, 6);
   assert.strictEqual(p.room, null); assert.ok(!p.stats.caught);
 });
 
-test('画面：查房气泡、门上"老板在里面"、冒犯值条、训话中、HR 约谈、结算里老板也在排行中', () => {
+test('画面：老板红名牌（查房！）、门上"老板在里面"、HR 约谈、结算里老板也在排行中', () => {
   ['render/theme', 'render/sprites', 'arena/app', 'arena/render'].forEach(m => require('../src/' + m + '.js'));
   const texts = [], ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)) }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
   const app = new A.App({ prep: 0, rng: mulberry32(4), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', playerDesk: 0, bossAI: false, employeeAI: false, time: 60 } }), r = new A.Renderer({ width: 960, height: 540, getContext: () => ctx }, app);
-  const m = app.start(); bossInto(m, 'pantry'); texts.length = 0; r.draw(0.016);
-  assert.ok(texts.includes('查房！') && texts.includes('老板在里面') && texts.includes('老板冒犯值'));
+  const m = app.start(); bossInto(m, 'pantry'); const po = m.grid.outside('pantry'); m.player.x = po.x + 2; m.player.y = po.y; texts.length = 0; r.draw(0.016);   // 站到茶水间门口附近（门在视野里）
+  assert.ok(texts.includes('老板 · 查房！') && texts.includes('老板在里面') && !texts.includes('老板冒犯值'), '员工看不到冒犯值');
+  m.boss.hr = 5; texts.length = 0; r.draw(0.016); assert.ok(texts.includes('老板 · HR 约谈中')); m.boss.hr = 0;
   m.boss.stay = 0; const o = m.grid.outside('pantry'); m.pathTo(m.boss, o.x, o.y); tick(m, 4);
   enter(m, m.player, 'restroom'); m.boss.cooldowns.restroom = 0; bossInto(m, 'restroom'); texts.length = 0; r.draw(0.016);
-  m.boss.hr = 5; texts.length = 0; r.draw(0.016); assert.ok(texts.includes('HR 约谈中'));
   m.boss.hr = 0; for (let i = 0; i < 60 * 70; i++) m.update(1 / 60); r.draw(0.016); r.draw(3); texts.length = 0; r.draw(0.016);   // 结算逐行揭晓，先让动画走完
-  assert.ok(texts.includes('老板') && texts.some(t => /^没收 \$\d+ · 抓到 1 人次$/.test(t)), '结算里老板一栏'); assert.ok(texts.some(t => /老板收益 = 每次没收 × 当次倍数/.test(t)));
+  assert.ok(texts.includes('老板') && texts.some(t => /^没收 \$\d+ · 抓到 1 人次$/.test(t)), '结算里老板一栏');
 });
 
-test('在房间里看不到外面：状态卡不显示老板在哪、别的房间有没有人，冒犯值条也隐藏', () => {
+test('在房间里看不到外面：门上的"老板在里面"、别的房间满没满都看不到', () => {
   const texts = [], ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)) }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
   const app = new A.App({ prep: 0, rng: mulberry32(8), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', playerDesk: 2, bossAI: false, employeeAI: false } }), r = new A.Renderer({ width: 960, height: 540, getContext: () => ctx }, app);
-  const m = app.start(); bossInto(m, 'pantry');
-  texts.length = 0; r.draw(0.016); assert.ok(texts.includes('老板在里面') && texts.includes('老板冒犯值'), '在办公区能看到');
+  const m = app.start(); bossInto(m, 'pantry'); const po = m.grid.outside('pantry'); m.player.x = po.x + 2; m.player.y = po.y;
+  texts.length = 0; r.draw(0.016); assert.ok(texts.includes('老板在里面'), '在办公区、门在视野里能看到');
+  m.player.x = m.grid.outside('meeting').x - 1; texts.length = 0; r.draw(0.016); assert.ok(!texts.includes('老板在里面'), '门不在视野里就看不到');
   enter(m, m.player, 'rooftop'); texts.length = 0; r.draw(0.016);
-  assert.ok(!texts.includes('老板在里面') && !texts.includes('老板冒犯值') && !texts.includes('满了'));
-  assert.ok(texts.includes('看不到') && texts.includes('在房间里看不到老板') && texts.includes('你在这里'));
+  assert.ok(!texts.includes('老板在里面') && !texts.includes('满了') && texts.includes('在天台摸鱼中'));
 });
 
 test('连摸途中被抓：按比例没收整个口袋，连摸加成清零', () => {

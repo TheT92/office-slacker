@@ -1,5 +1,5 @@
 // 摸鱼大作战：AI 员工。三种性格，只用自己身份能拿到的信息：
-// 在办公区能看到老板在哪、各房间门牌（人数、空房倍率）；在房间里什么也看不到，只按自己的计划待多久。
+// 在办公区只看得到自己视野（A.SIGHT）里的东西：视野里的老板、视野里的门牌；在房间里什么也看不到，只按自己的计划待多久。
 // 只通过和玩家相同的指令操作（moveTo / exitRoom / goDesk）。
 (function (root) {
   const OS = root.OS = root.OS || {};
@@ -23,14 +23,18 @@
       this.lastBossRoom = null; this.followRoom = null; this.followTimer = 0;
     }
     range(r) { return r[0] + this.rng() * (r[1] - r[0]); }
+    // 视野：只看得到自己周围一块
+    bossInSight() { const b = this.m.boss; return !b.room && !(b.waitT > 0) && A.inSight(this.e, b.x, b.y); }
+    doorInSight(id) { const o = this.m.grid.outside(id); return A.inSight(this.e, o.x, o.y); }
     think(dt) {
       const m = this.m, e = this.e, b = m.boss;
       if (m.phase !== 'playing' || m.busy(e)) return;
       this.useSkill();
-      // 在办公区才看得到老板：老板刚从某个房间出来，记下来（精明型会跟进去）
+      // 在办公区、而且那扇门在视野里才看得到：老板刚从某个房间出来，记下来（精明型会跟进去）
       if (!e.room) {
-        if (this.lastBossRoom && !b.room && this.rng() < this.p.follow) { this.followRoom = this.lastBossRoom; this.followTimer = 0.4 + this.rng() * 0.8; }
-        this.lastBossRoom = b.room;
+        const seenRoom = b.room && this.doorInSight(b.room) ? b.room : null;
+        if (this.lastBossRoom && !b.room && this.bossInSight() && this.rng() < this.p.follow) { this.followRoom = this.lastBossRoom; this.followTimer = 0.4 + this.rng() * 0.8; }
+        this.lastBossRoom = seenRoom;
       }
       if (this.react > 0) { this.react -= dt; return; }   // 反应延迟（犹豫）
       if (e.room) {   // 在房间里：按计划待够就走（看不到外面）；房里有补给就过去捡
@@ -64,10 +68,10 @@
     }
     // 按偏好 × 空房倍率随机挑一个能进、而且老板不在附近的房间
     choose() {
-      const m = this.m, e = this.e, b = m.boss, opts = [];
+      const m = this.m, e = this.e, b = m.boss, opts = [];   // lure（门牌上的倍率）只是偏好，看不见也按经验估
       for (const id of A.SLACK_ROOMS) {
         if (m.entryBlock(e, id)) continue;
-        const o = m.grid.outside(id); if (Math.hypot(b.x - o.x, b.y - o.y) < this.p.avoidBoss) continue;
+        const o = m.grid.outside(id); if (this.bossInSight() && Math.hypot(b.x - o.x, b.y - o.y) < this.p.avoidBoss) continue;   // 只躲看得见的老板
         opts.push({ id, w: this.p.pref[id] * m.lure(id) * (m.supplies.some(s => s.room === id) ? 2 : 1) });   // 有补给的房间更想去
       }
       if (!opts.length) return null;

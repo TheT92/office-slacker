@@ -1,7 +1,8 @@
 // 摸鱼大作战：AI 老板。三档难度（A.DIFFICULTY）：
 // - 简单：查房完全随机，不看任何人（只在"现在能查"的房间里均匀随机挑）。
-// - 普通 / 困难：只用真人老板也看得到的信息——站在办公区时看得到员工走进了哪扇门，
-//   记下"谁进了哪间、进去多久了"，优先查"人多、待得久"的房间；自己在房间里时看不到外面，记录不更新；
+// - 普通 / 困难：只用真人老板也看得到的信息——站在办公区时只看得到自己视野（A.SIGHT）里的人，
+//   亲眼看到谁走进了哪扇门就记下"谁进了哪间、进去多久了"，优先查"人多、待得久"的房间；
+//   视野外的事一概不知；平时多在门附近转悠（看得到门）；自己在房间里时看不到外面，记录不更新；
 //   猫的替身会骗过它（看到"猫在工位"）。普通会记错一部分、偶尔随便挑；困难记得准、出手快、技能用得准。
 // 老板看不见房间里面：除了"监控"技能，从不读取房间里的真实人数。只通过和玩家相同的指令操作老板。
 (function (root) {
@@ -10,11 +11,11 @@
 
   // wrong：记错房间的概率；smart：按推算挑房间（否则随便挑）的概率；revisit：看到有人跟进刚查完的房间时放回马枪的概率
   A.DIFFICULTY = {
-    // calm：冒犯值超过多少就先缓一缓；calmP：缓一缓的概率（越聪明越会控制冒犯值，避免被投诉）
-    // 2.0.0 用 tools/arena-sim.js 各跑 400 局调出（见 docs/DESIGN.md 平衡总表）
+    // calm：冒犯值超过多少就先缓一缓；calmP：缓一缓的概率（越聪明越会控制冒犯值，避免被投诉）；patrol：转悠时去门口附近盯着的概率
+    // 2.0.0 用 tools/arena-sim.js 各跑 400 局调出；2.1.0 竖屏大地图 + 视野限制后重调 patrol / 困难的 calm（见 docs/DESIGN.md 平衡总表）
     easy:   { name: '简单', track: false, idle: [3.5, 7], wrong: 0, smart: 0, revisit: 0.35, calm: 70, calmP: 0.6 },
-    normal: { name: '普通', track: true, idle: [1.1, 2.8], wrong: 0.15, smart: 0.9, revisit: 0.6, calm: 70, calmP: 0.7 },
-    hard:   { name: '困难', track: true, idle: [0.3, 1], wrong: 0, smart: 1, revisit: 0.95, calm: 55, calmP: 1 },
+    normal: { name: '普通', track: true, idle: [1.1, 2.8], wrong: 0.15, smart: 0.9, revisit: 0.6, calm: 70, calmP: 0.7, patrol: 0.6 },
+    hard:   { name: '困难', track: true, idle: [0.3, 1], wrong: 0, smart: 1, revisit: 0.95, calm: 70, calmP: 0.7, patrol: 0.8 },
   };
   A.DIFFICULTY_IDS = ['easy', 'normal', 'hard'];
 
@@ -27,38 +28,55 @@
     }
     rnd() { return this.rng(); }
     idleTime() { const r = this.d.idle; return r[0] + this.rnd() * (r[1] - r[0]); }
+    // 盯门的位置：站在这里视野里能同时看到两扇摸鱼房间的门，而且离门不太近（员工不会被吓跑）
+    watchSpots() {
+      const g = this.m.grid; if (g.watchSpots) return g.watchSpots;
+      const doors = A.SLACK_ROOMS.map(id => g.outside(id));
+      g.watchSpots = g.cells.filter(k => !k.wall && !k.room && !k.door).filter(k => { const p = { x: k.c + 0.5, y: k.r + 0.5 };
+        return doors.filter(o => Math.abs(o.x - p.x) <= A.SIGHT.w / 2 && Math.abs(o.y - p.y) <= A.SIGHT.h / 2 && Math.hypot(o.x - p.x, o.y - p.y) >= 5.5).length >= 2; });
+      return g.watchSpots;
+    }
+    // 转悠的落脚点：会记门的老板常去"盯门位"（一眼看两扇门），否则办公区里随便走
     officePoint() {
       const g = this.m.grid, b = this.m.boss, list = g.cells.filter(k => !k.wall && !k.room && !k.door);
+      if (this.d.track && this.rnd() < (this.d.patrol || 0)) {
+        const spots = this.watchSpots();
+        for (let i = 0; i < 8 && spots.length; i++) { const k = spots[Math.floor(this.rnd() * spots.length)]; if (this.m.canPass(b, k)) return { x: k.c + 0.5, y: k.r + 0.5 }; }
+      }
       for (let i = 0; i < 12; i++) { const k = list[Math.floor(this.rnd() * list.length)]; if (this.m.canPass(b, k)) return { x: k.c + 0.5, y: k.r + 0.5 }; }
       return null;
     }
     can(id) { const b = this.m.boss, S = A.BOSS_SKILLS[id]; return b.skills.includes(id) && !(b.skillCd[id] > 0) && b.anger >= S.cost && !(b.hr > 0); }
     // 老板现在能不能看到办公区（在房间里 / 开局在办公室里看不到）
     canWatch() { const b = this.m.boss; return !b.room && !(b.waitT > 0); }
-    // 在老板眼里，这个员工在不在办公区（猫的替身让它看起来在工位上）
-    looksPresent(e) { return !e.room || e.decoyT > 0; }
-    // 观察：只在看得到办公区时更新
+    // 在老板眼里，这个员工是不是"在办公区、而且在我视野里"（猫的替身让它看起来坐在工位上）
+    visible(e) {
+      const b = this.m.boss;
+      if (e.room && e.decoyT > 0) { const s = A.seatOf(e.desk); return A.inSight(b, s.x, s.y); }
+      return !e.room && A.inSight(b, e.x, e.y);
+    }
+    // 观察：只在看得到办公区时更新，而且只看得到视野里的人
     observe() {
       const m = this.m; if (!this.d.track || !this.canWatch()) return;
       for (const e of m.employees()) {
-        const here = this.looksPresent(e), was = this.seen[e.id];
-        if (here) delete this.belief[e.id];
-        else if (was === true || was === undefined) {   // 刚刚（或在我看不到的时候）消失了
-          let room = was === true ? e.room : null;      // 亲眼看到走进哪扇门；回来时才发现不见了 = 不知道去了哪
-          if (room && this.rnd() < this.d.wrong) { const others = A.SLACK_ROOMS.filter(r => r !== room); room = others[Math.floor(this.rnd() * others.length)]; }   // 看错了
+        const vis = this.visible(e), was = this.seen[e.id];
+        if (vis) delete this.belief[e.id];
+        else if (was === true && e.room && !(e.decoyT > 0)) {   // 上一刻还看得到，这一刻进了门 = 亲眼看到走进哪扇门
+          let room = e.room;
+          if (this.rnd() < this.d.wrong) { const others = A.SLACK_ROOMS.filter(r => r !== room); room = others[Math.floor(this.rnd() * others.length)]; }   // 看错了
           this.belief[e.id] = { room, since: m.time };
-        }
-        this.seen[e.id] = here;
+        }   // 走出视野 = 不知道去了哪，什么也不记
+        this.seen[e.id] = vis;
       }
     }
-    // 从老板房间里出来后：之前看到的状态作废（这段时间看不到）
-    blind() { for (const id in this.seen) if (this.seen[id]) this.seen[id] = undefined; }
+    // 从房间里出来后：之前看到的状态作废（这段时间看不到）
+    blind() { for (const id in this.seen) this.seen[id] = false; }
     // 推算每个房间值多少：确定进去的人按待的时间加分（口袋越鼓越值），不知道去哪的平摊
     scores() {
       const m = this.m, s = {}; A.SLACK_ROOMS.forEach(r => (s[r] = 0.05));
       for (const id in this.belief) {
         const B = this.belief[id], w = 0.4 + Math.min(1, (m.time - B.since) / 12);
-        if (B.room) s[B.room] += w; else A.SLACK_ROOMS.forEach(r => (s[r] += w / 3));
+        if (B.room) s[B.room] += w; else A.SLACK_ROOMS.forEach(r => (s[r] += w / A.SLACK_ROOMS.length));
       }
       return s;
     }
@@ -83,7 +101,7 @@
         const s = this.d.track ? this.scores() : null, hot = s && Math.max(...A.SLACK_ROOMS.map(r => s[r])) >= 1.2;
         if (this.t > 0 && !(hot && this.level === 'hard')) return;   // 困难：看准了就立刻出手
         if (b.offense > this.d.calm && this.rnd() < this.d.calmP && !(hot && b.offense < 85)) { this.t = 2 + this.rnd() * 2; return; }   // 怨气太大，先缓缓（看准有人时例外）
-        const missing = Object.keys(this.belief).length;
+        const missing = Object.keys(this.belief).length + (this.d.track ? m.employees().filter(e => !this.visible(e)).length * 0.5 : 0);   // 看不见的人可能在摸鱼
         if (this.can('meeting') && (this.d.track ? missing >= 2 && this.rnd() < 0.5 : this.rnd() < 0.2) && m.useBossSkill('meeting')) { this.t = 1; return; }
         let open = A.SLACK_ROOMS.filter(id => !m.entryBlock(b, id));
         if (s && this.can('raid')) {   // 最值钱的房间在冷却中：突击检查
