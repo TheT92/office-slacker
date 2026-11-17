@@ -17,7 +17,7 @@
     // 点"开始"：随机分配身份
     start() {
       this.match = new A.Match(Object.assign({ rng: this.rng, playerRole: 'random', prep: this.prep, difficulty: this.difficulty }, this.matchOpts));   // 1/5 概率当老板
-      this.screen = 'match'; this.paused = false; this.acc = 0; this.peekMode = false; this.cardOpen = false;
+      this.screen = 'match'; this.paused = false; this.acc = 0; this.cardOpen = false;
       return this.match;
     }
     restart() { return this.start(); }
@@ -40,11 +40,6 @@
     // 玩家指令（玩家角色 = match.player）
     tapWorld(x, y) {
       if (!this.canAct()) return false;
-      if (this.peekMode) {   // 监控：点一个摸鱼房间
-        const k = this.match.grid.cellAt(x, y), room = k && (k.room || k.door);
-        this.peekMode = false;
-        return room && A.ROOMS[room].slack ? this.match.useBossSkill('peek', room) : false;
-      }
       return this.match.moveTo(this.match.player, x, y);
     }
     // 员工技能（E）
@@ -53,8 +48,7 @@
     bossSkill(i) {
       const m = this.match, b = m && m.player; if (!this.canAct() || b.kind !== 'boss') return false;
       const id = b.skills[i]; if (!id) return false;
-      if (id === 'peek') { this.peekMode = !this.peekMode; return 'peek'; }
-      this.peekMode = false; return m.useBossSkill(id);
+      return m.useBossSkill(id);   // 2.5.0：监控也是按一下就放（走近房间就能看），不用再点房间
     }
     // 选卡片：老板阶段技能 / 员工升级方向；没有待选时返回 false
     pickOffer(i) {
@@ -63,6 +57,8 @@
       if (p.kind === 'employee' && p.branchOffer) return i < 2 ? m.chooseBranch(p, i ? 'B' : 'A') : false;
       return false;
     }
+    // 道具（捣乱补给，Q）
+    useItem() { const m = this.match, p = m && m.player; if (!this.canAct() || p.kind !== 'employee') return false; return m.useItem(p); }
     hasOffer() { const m = this.match, p = m && m.player; return !!(m && ((p.kind === 'boss' && m.offer) || (p.kind === 'employee' && p.branchOffer))); }
     act() { if (!this.canAct()) return false; return this.match.action(this.match.player); }
     setDir(dx, dy) { if (this.screen === 'match' && this.match) this.match.setDir(this.match.player, this.paused ? 0 : dx, this.paused ? 0 : dy); }
@@ -80,7 +76,7 @@
       case 'pickup': return me ? 'pickup' : null;
       case 'levelUp': return me ? 'levelup' : null;
       case 'bossPick': return boss ? 'pick' : null;
-      case 'empSkill': return me ? (ev.skill === 'owl' ? 'lock' : 'shield') : null;
+      case 'empSkill': return me ? (ev.skill === 'bear' ? 'lock' : 'shield') : null;
       case 'meeting': return me || boss ? 'meeting' : null;
       default: return null;
     }

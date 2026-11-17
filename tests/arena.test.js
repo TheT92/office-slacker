@@ -1,7 +1,7 @@
 // 摸鱼大作战（A1）：地图、寻路、进出房间、收入、停留上限、冷却、口袋与回工位存钱
 const test = require('node:test'), assert = require('node:assert');
 const { OS, mulberry32 } = require('./helper');
-['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/match'].forEach(m => require('../src/' + m + '.js'));
+['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/events', 'arena/match'].forEach(m => require('../src/' + m + '.js'));
 const A = OS.arena;
 const tick = (m, sec, dt = 1 / 60) => { for (let t = 0; t < sec - 1e-9; t += dt) m.update(dt); };
 // A1 的用例关掉 AI 老板，避免被随机查房干扰；A2 用例在 arena-boss.test.js
@@ -10,11 +10,11 @@ const center = (m, id) => { const c = m.grid.roomCells(id)[0]; return { x: c.c +
 // 走进房间并等到进门
 function enter(m, a, id) { const p = center(m, id); assert.ok(m.moveTo(a, p.x, p.y), '能走去' + id); for (let i = 0; i < 1200 && a.room !== id; i++) m.update(1 / 60); assert.strictEqual(a.room, id); }
 
-test('地图：每行等宽，3 个摸鱼房间、门和工位都在', () => {
+test('地图：每行等宽，3 个摸鱼房间 + 厕所、门和工位都在', () => {
   assert.ok(A.MAP.every(r => r.length === A.COLS) && A.MAP.length === A.ROWS);
   const g = A.buildGrid(A.MAP);
-  for (const id of ['restroom', 'pantry', 'rooftop', 'meeting']) { assert.ok(g.doors[id], id + ' 有门'); assert.ok(g.outside(id), id + ' 门外是办公区'); }
-  assert.deepStrictEqual(A.SLACK_ROOMS, ['restroom', 'pantry', 'rooftop']);
+  for (const id of ['print', 'pantry', 'rooftop', 'toilet']) { assert.ok(g.doors[id], id + ' 有门'); assert.ok(g.outside(id), id + ' 门外是办公区'); }
+  assert.deepStrictEqual(A.SLACK_ROOMS, ['print', 'pantry', 'rooftop']);
   assert.strictEqual(A.SLACK_ROOMS.reduce((s, r) => s + A.ROOMS[r].cap, 0), 5, '5 个位置给 4 名员工');
   for (const d of A.DESKS) { const s = A.seatOf(d), k = g.cellAt(s.x, s.y); assert.ok(k && !k.wall && !k.room, '座位在办公区'); assert.ok(g.at(d.c, d.r).desk && g.at(d.c + 1, d.r).desk); }
 });
@@ -27,34 +27,34 @@ test('开局：1 名玩家员工 + 3 名员工 + 老板，各自固定在不同�
   const p = newMatch().player; assert.strictEqual(p.id, 'rabbit'); assert.strictEqual(p.desk.id, 0);
 });
 
-test('寻路：员工能走到 3 个摸鱼房间，进不了会议室（2.1.0 起没有老板办公室）', () => {
+test('寻路：员工能走到 3 个摸鱼房间和厕所；老板进不了厕所（2.1.0 起没有老板办公室）', () => {
   const m = newMatch(), a = m.player;
-  for (const id of A.SLACK_ROOMS) { const p = center(m, id); assert.ok(A.findPath(m.grid, a.x, a.y, p.x, p.y, k => m.canPass(a, k)), id); }
-  assert.strictEqual(m.moveTo(a, ...Object.values(center(m, 'meeting'))), false);
-  assert.deepStrictEqual(m.drainEvents().pop(), { type: 'blocked', who: 'rabbit', room: 'meeting', reason: 'locked' });
+  for (const id of A.ENTER_ROOMS) { const p = center(m, id); assert.ok(A.findPath(m.grid, a.x, a.y, p.x, p.y, k => m.canPass(a, k)), id); }
+  assert.strictEqual(m.moveTo(m.boss, ...Object.values(center(m, 'toilet'))), false);
+  assert.deepStrictEqual(m.drainEvents().pop(), { type: 'blocked', who: 'boss', room: 'toilet', reason: 'locked' });
   assert.ok(!A.ROOMS.boss && !m.grid.doors.boss, '没有老板办公室');
 });
 
 test('收入曲线：先爬升到峰值再递减，到最长停留回落到 35%', () => {
-  const R = A.ROOMS.restroom;
-  assert.ok(Math.abs(A.rate('restroom', 0) - R.peak * 0.35) < 1e-9);
-  assert.ok(Math.abs(A.rate('restroom', R.rise) - R.peak) < 1e-9);
-  assert.ok(A.rate('restroom', R.rise / 2) < R.peak && A.rate('restroom', (R.rise + R.maxStay) / 2) < R.peak);
-  assert.ok(Math.abs(A.rate('restroom', R.maxStay) - R.peak * 0.35) < 1e-9);
+  const R = A.ROOMS.print;
+  assert.ok(Math.abs(A.rate('print', 0) - R.peak * 0.35) < 1e-9);
+  assert.ok(Math.abs(A.rate('print', R.rise) - R.peak) < 1e-9);
+  assert.ok(A.rate('print', R.rise / 2) < R.peak && A.rate('print', (R.rise + R.maxStay) / 2) < R.peak);
+  assert.ok(Math.abs(A.rate('print', R.maxStay) - R.peak * 0.35) < 1e-9);
   assert.strictEqual(A.rate('meeting', 3), 0);
 });
 
 test('进房间后钱进口袋；办公区里只有基础工资直接存入', () => {
   const m = newMatch(), a = m.player;
   tick(m, 2); assert.ok(Math.abs(a.banked - 2) < 0.05, '办公区基础工资 $1/秒'); assert.strictEqual(a.pocket, 0);
-  enter(m, a, 'restroom'); const b0 = a.banked;
-  tick(m, 5); assert.ok(a.pocket > 20, '厕所里 5 秒口袋有钱'); assert.ok(Math.abs(a.banked - b0) < 1e-9, '房间里不再领基础工资');
-  assert.ok(m.drainEvents().some(e => e.type === 'enter' && e.room === 'restroom'));
+  enter(m, a, 'print'); const b0 = a.banked;
+  tick(m, 5); assert.ok(a.pocket > 20, '打印室里 5 秒口袋有钱'); assert.ok(Math.abs(a.banked - b0) < 1e-9, '房间里不再领基础工资');
+  assert.ok(m.drainEvents().some(e => e.type === 'enter' && e.room === 'print'));
 });
 
 test('钱要送回自己的工位才存入；路过别人的工位不算', () => {
   const m = newMatch({ playerDesk: 1 }), a = m.player;
-  enter(m, a, 'restroom'); tick(m, 4.1); m.exitRoom(a); tick(m, 2);
+  enter(m, a, 'print'); tick(m, 4.1); m.exitRoom(a); tick(m, 2);
   assert.strictEqual(a.room, null); const pocket = a.pocket; assert.ok(pocket > 0, '出门后钱还在口袋');
   const other = A.seatOf(A.DESKS[0]); m.moveTo(a, other.x, other.y + 0.4); tick(m, 6);
   assert.ok(a.pocket > 0, '别人的工位不存');
@@ -62,23 +62,23 @@ test('钱要送回自己的工位才存入；路过别人的工位不算', () =>
   assert.strictEqual(a.pocket, 0); assert.ok(m.drainEvents().some(e => e.type === 'deposit' && e.amount === pocket));
 });
 
-test('容量：厕所只有 1 个坑，有人时别人进不去', () => {
+test('容量：打印室只有 1 个位置，有人时别人进不去', () => {
   const m = newMatch(), a = m.player, b = m.employees()[1];
-  enter(m, a, 'restroom');
-  assert.strictEqual(m.moveTo(b, ...Object.values(center(m, 'restroom'))), false);
+  enter(m, a, 'print');
+  assert.strictEqual(m.moveTo(b, ...Object.values(center(m, 'print'))), false);
   assert.strictEqual(m.drainEvents().pop().reason, 'full');
   assert.strictEqual(m.entryBlock(b, 'pantry'), null);
 });
 
 test('停留上限：到时间自动出门，出门后这个房间进入冷却，其他房间不受影响', () => {
-  const m = newMatch(), a = m.player, R = A.ROOMS.restroom;
-  enter(m, a, 'restroom'); tick(m, R.maxStay + 0.1);
+  const m = newMatch(), a = m.player, R = A.ROOMS.print;
+  enter(m, a, 'print'); tick(m, R.maxStay + 0.1);
   assert.ok(a.forced || a.room === null); assert.ok(m.drainEvents().some(e => e.type === 'forced'));
   assert.strictEqual(m.moveTo(a, 5, 5), false, '自动出门时不能操作');
   tick(m, 3); assert.strictEqual(a.room, null); assert.ok(!a.forced);
-  assert.ok(a.cooldowns.restroom > R.cooldown - 3.5);
-  assert.strictEqual(m.entryBlock(a, 'restroom'), 'cooldown'); assert.strictEqual(m.entryBlock(a, 'pantry'), null);
-  tick(m, R.cooldown); assert.strictEqual(m.entryBlock(a, 'restroom'), null);
+  assert.ok(a.cooldowns.print > R.cooldown - 3.5);
+  assert.strictEqual(m.entryBlock(a, 'print'), 'cooldown'); assert.strictEqual(m.entryBlock(a, 'pantry'), null);
+  tick(m, R.cooldown); assert.strictEqual(m.entryBlock(a, 'print'), null);
 });
 
 // 按移动时间估算路程（楼梯格按减速折算）
@@ -98,7 +98,7 @@ test('天台：要走一排楼梯（慢、没有收入）；四个工位到三�
 
 test('不回工位接着进下一个房间：口袋继续累积', () => {
   const m = newMatch(), a = m.player;
-  enter(m, a, 'restroom'); tick(m, 4.1); const p1 = a.pocket; m.exitRoom(a); tick(m, 1.5);
+  enter(m, a, 'print'); tick(m, 4.1); const p1 = a.pocket; m.exitRoom(a); tick(m, 1.5);
   enter(m, a, 'pantry'); tick(m, 3); assert.ok(a.pocket > p1);
 });
 
@@ -148,9 +148,9 @@ test('画面：标题、办公区全图、房间视角（外面变暗、只画�
   r.draw(0.016); assert.ok(texts.includes('开始'));
   const m = app.start(); texts.length = 0; r.draw(0.016);
   assert.ok(texts.includes('我的工位') && texts.some(t => /^回工位/.test(t)) && !texts.includes('存款排行'), '竖屏版不显示实时排行');
-  const p = m.player; enter(m, p, 'restroom'); texts.length = 0; r.draw(0.016);
-  assert.strictEqual(r.cam.room, 'restroom'); assert.ok(r.cam.s > A.VIEW.TS, '房间视角放大');
-  assert.ok(texts.includes('在厕所摸鱼中') && texts.some(t => /^还要待 \d 秒$/.test(t)) && texts.some(t => /^至少再待 \d 秒$/.test(t)));
+  const p = m.player; enter(m, p, 'print'); texts.length = 0; r.draw(0.016);
+  assert.strictEqual(r.cam.room, 'print'); assert.ok(r.cam.s > A.VIEW.TS, '房间视角放大');
+  assert.ok(texts.includes('在打印室摸鱼') && texts.some(t => /^还要待 \d 秒$/.test(t)) && texts.some(t => /^至少再待 \d 秒$/.test(t)));
   assert.ok(!texts.includes('兔子') && !texts.includes('老板'), '房间外的人不画');
   const w = r.toWorld(r.sx(3.5), r.sy(2.5)); assert.ok(Math.abs(w.x - 3.5) < 1e-9 && Math.abs(w.y - 2.5) < 1e-9);
   app.pause(); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('重新开始'));
@@ -161,7 +161,7 @@ test('画面：标题、办公区全图、房间视角（外面变暗、只画�
 test('连摸加成：不回工位连续进第 2、3 间，存钱时整个口袋 ×1.2、×1.4（封顶 ×1.8），存完清零', () => {
   assert.strictEqual(A.comboMult(1), 1); assert.ok(Math.abs(A.comboMult(2) - 1.2) < 1e-9); assert.ok(Math.abs(A.comboMult(3) - 1.4) < 1e-9); assert.strictEqual(A.comboMult(9), 1.8);
   const m = newMatch({ playerDesk: 1 }), a = m.player;
-  enter(m, a, 'restroom'); tick(m, 4.1); m.exitRoom(a); tick(m, 3); assert.strictEqual(a.combo, 1);
+  enter(m, a, 'print'); tick(m, 4.1); m.exitRoom(a); tick(m, 3); assert.strictEqual(a.combo, 1);
   enter(m, a, 'pantry'); tick(m, 4.1); m.exitRoom(a); tick(m, 3); assert.strictEqual(a.combo, 2);
   const pocket = a.pocket, bank = a.banked; m.drainEvents(); m.goDesk(a); tick(m, 8);
   const ev = m.drainEvents().find(e => e.type === 'deposit'); assert.ok(ev);

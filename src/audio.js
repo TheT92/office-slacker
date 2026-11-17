@@ -62,7 +62,7 @@
     const now = ctx.currentTime; if (GAP[name] && now - (lastPlay[name] || -9) < GAP[name]) return;
     lastPlay[name] = now; SFX[name]();
   }
-  // —— 背景音乐：轻快舒缓的 16 小节循环（C – Am – F – G，约 92 BPM），默认开启 ——
+  // —— 背景音乐：闯关模式用轻快舒缓的 16 小节循环（C – Am – F – G，约 92 BPM），默认开启；摸鱼大作战用下面的「泡泡糖跳跳」——
   // 柔和铺底（正弦和弦）+ 分解和弦（三角波）+ 低音 + 旋律，走独立的低通总线，音量低于音效。
   const BPM = 92, EIGHTH = 60 / BPM / 2;
   let tempo = 1;   // 下班冲刺时加快
@@ -79,14 +79,60 @@
     [72, null, 76, null, 79, 81, 79, null], [76, null, 72, null, 69, null, 72, null],
     [74, null, 77, null, 76, null, 74, null], [72, null, null, null, null, null, null, null],
   ];
-  let musicBus = null, step = 0, nextT = 0;
+  let musicBus = null, arenaBus = null, step = 0, nextT = 0, song = 'default';
   function mtone(f, t, dur, type, vol) {
     const o = ctx.createOscillator(), gn = ctx.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t);
     gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.08, dur * 0.3)); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(gn); gn.connect(musicBus); o.start(t); o.stop(t + dur + 0.05);
   }
+  // —— 摸鱼大作战的背景音乐（2.3.1）：「泡泡糖跳跳」，C 大调 152 BPM，8 小节循环（C G Am F | C G F G）——
+  // 原创旋律：方波主旋律一蹦一跳 + 八度弹跳的方波低音 + 轻快鼓点；下班冲刺时加速并升 2 个半音、加密踩镲。
+  const ARENA = {
+    bpm: 152, chords: ['C', 'G', 'Am', 'F', 'C', 'G', 'F', 'G'],
+    CH: { C: [48, 52, 55], G: [43, 47, 50], Am: [45, 48, 52], F: [41, 45, 48] },
+    mel: ['E5 G5 C6 G5 E5 x G5 x', 'D5 G5 B5 G5 D5 x B4 x', 'C5 E5 A5 E5 C5 x E5 x', 'A5 - G5 F5 E5 - D5 -',
+          'E5 E5 x G5 x C6 B5 A5', 'G5 - D5 - G5 A5 B5 -', 'A5 G5 F5 E5 F5 - A5 -', 'G5 - - x D6 C6 B5 G5'],
+    drums: { k: [0, 6, 8], s: [4, 12], h: [0, 2, 4, 6, 8, 10, 12, 14] },
+  };
+  ARENA.S16 = 60 / ARENA.bpm / 4;
+  { const NT = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, midi = x => { const m = /^([A-G])([#b]?)(\d)$/.exec(x); return 12 * (+m[3] + 1) + NT[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0); };
+    ARENA.bars = ARENA.mel.map(str => { const out = []; str.split(' ').forEach((tk, i) => { if (tk === 'x') return; if (tk === '-') { if (out.length) out[out.length - 1].len += 2; return; } out.push({ at: i * 2, n: midi(tk), len: 2 }); }); return out; }); }
+  function atone(f, t, dur, type, vol, lp, slide) {
+    const o = ctx.createOscillator(), gn = ctx.createGain(); o.type = type; o.frequency.setValueAtTime(f, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(f * slide, t + dur);
+    const a = 0.006, rel = Math.min(0.05, dur * 0.4);
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(vol, t + a); gn.gain.setValueAtTime(vol, t + Math.max(a, dur - rel)); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let out = gn; if (lp) { const fl = ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = lp; gn.connect(fl); out = fl; }
+    o.connect(gn); out.connect(arenaBus); o.start(t); o.stop(t + dur + 0.05);
+  }
+  let nbuf = null;
+  function anoise(t, dur, vol, type, freq) {
+    if (!nbuf) { const n = ctx.sampleRate; nbuf = ctx.createBuffer(1, n, n); const d = nbuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; }
+    const sb = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), gn = ctx.createGain(); sb.buffer = nbuf; fl.type = type; fl.frequency.value = freq;
+    gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur); sb.connect(fl); fl.connect(gn); gn.connect(arenaBus); sb.start(t); sb.stop(t + dur + 0.02);
+  }
+  const ADRUM = {
+    k: t => atone(150, t, 0.16, 'sine', 0.7, 0, 0.3),
+    s: t => { anoise(t, 0.14, 0.34, 'bandpass', 1800); atone(210, t, 0.08, 'triangle', 0.19, 0, 0.6); },
+    h: (t, v) => anoise(t, 0.035, 0.1 * (v || 1), 'highpass', 7500),
+    c: t => anoise(t, 0.8, 0.16, 'highpass', 5000),
+  };
+  function arenaStep(i, t) {
+    const S = ARENA, s16 = S.S16 / tempo, rush = tempo > 1.05, up = rush ? 2 : 0, b = Math.floor(i / 16) % S.bars.length, st = i % 16;
+    const ch = S.CH[S.chords[b]].map(n => n + up), root = ch[0] - 12;
+    for (const k in S.drums) if (S.drums[k].includes(st)) ADRUM[k](t);
+    if (st === 0 && b === 0) ADRUM.c(t);
+    if (rush && st % 2 === 1) ADRUM.h(t, 0.6);
+    if (st % 2 === 0) atone(N(root + (st % 4 === 2 ? 12 : 0)), t, s16 * 1.7, 'square', 0.07, 900);   // 八度弹跳低音
+    if (st === 0) for (const n of ch) atone(N(n + 12), t, s16 * 15, 'triangle', 0.014);               // 很轻的和弦铺底
+    for (const n of S.bars[b]) if (n.at === st) {
+      atone(N(n.n + up), t, Math.max(0.05, n.len * s16 * 0.7), 'square', 0.085, 3800);                  // 主旋律
+      atone(N(n.n + up), t + s16 * 1.5, Math.max(0.05, n.len * s16 * 0.42), 'square', 0.019, 2300);    // 小回声
+    }
+  }
   function scheduleStep(i, t) {
+    if (song === 'arena') return arenaStep(i, t);
     const bar = Math.floor(i / 8) % 16, beat = i % 8, ch = CHORDS[bar % 4];
     if (beat === 0) for (const n of ch) mtone(N(n + 12), t, EIGHTH * 8, 'sine', 0.018);            // 铺底和弦（整小节）
     if (beat === 0 || beat === 4) mtone(N(ch[0] - 12), t, EIGHTH * 3.5, 'sine', 0.06);             // 低音
@@ -99,18 +145,21 @@
     if (!musicBus) {
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
       musicBus = ctx.createGain(); musicBus.gain.value = MUSIC_GAIN; musicBus.connect(lp); lp.connect(master);
+      const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;   // 摸鱼大作战的音乐：不加低通（方波要亮），压一下峰值
+      arenaBus = ctx.createGain(); arenaBus.gain.value = MUSIC_GAIN * 0.8; arenaBus.connect(comp); comp.connect(master);
     }
     nextT = ctx.currentTime + 0.1;
     musicTimer = setInterval(() => {
       if (!musicOn) return;
-      while (nextT < ctx.currentTime + 0.3) { if (!muted) scheduleStep(step, nextT); step++; nextT += EIGHTH / tempo; }
+      while (nextT < ctx.currentTime + 0.3) { if (!muted) scheduleStep(step, nextT); step++; nextT += (song === 'arena' ? ARENA.S16 : EIGHTH) / tempo; }   // 摸鱼大作战按十六分音符走
     }, 100);
   }
   function stopMusic() { if (musicTimer) { clearInterval(musicTimer); musicTimer = null; } }
-  function setTempo(v) { tempo = Math.max(0.5, Math.min(2, v || 1)); }
+  function setTempo(v) { tempo = Math.max(0.5, Math.min(2, v || 1)); }   // 摸鱼大作战：> 1 时（下班冲刺）还会升 2 个半音、加密踩镲
+  function setSong(n) { const next = n === 'arena' ? 'arena' : 'default'; if (next !== song) { song = next; step = 0; } }
   function setMuted(v) { muted = !!v; if (master) master.gain.value = muted ? 0 : 0.6; }
   function setMusic(v) { musicOn = !!v; if (musicOn) startMusic(); else stopMusic(); }
   // 测试用：曲子结构信息
   const musicInfo = { bars: MEL.length, bpm: BPM, chords: CHORDS.length, sfxGain: SFX_GAIN, musicGain: MUSIC_GAIN };
-  OS.audio = { unlock, play, setMuted, setMusic, setTempo, musicInfo, has: n => !!SFX[n], get available() { return !!AC; } };
+  OS.audio = { unlock, play, setMuted, setMusic, setTempo, setSong, musicInfo, arenaInfo: { bpm: ARENA.bpm, bars: ARENA.mel.length, name: '泡泡糖跳跳' }, has: n => !!SFX[n], get available() { return !!AC; } };
 })(typeof window !== "undefined" ? window : globalThis);

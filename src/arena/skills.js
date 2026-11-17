@@ -1,41 +1,55 @@
-// 摸鱼大作战（A4）：老板怒气与分阶段技能、员工角色技能与升级。
+// 摸鱼大作战（A4，2.2.0 重做员工技能、加被动）：老板怒气与分阶段技能、员工角色技能与升级。
 // 配置 + 挂到 Match.prototype 上的逻辑（纯逻辑，Node 可测）。
 (function (root) {
   const OS = root.OS = root.OS || {};
   const A = OS.arena = OS.arena || {};
 
   // —— 老板 ——
-  A.ANGER = { perSec: 1, perCatch: 10, max: 100 };
+  A.ANGER = { perSec: 1.2, perCatch: 12, max: 100 };   // 2.5.0 加强：每秒 1 → 1.2，抓 1 人 10 → 12
   A.PHASE = { count: 3, len: 80, pickTime: 10, offer: 3 };   // 每 80 秒一个阶段，阶段开始时从随机 3 个技能里选 1 个（10 秒不选就随机）
   A.BOSS_SKILLS = {
-    dash:    { name: '冲刺', cost: 20, cd: 15, dur: 5, mult: 1.6, desc: '5 秒内移动 ×1.6' },
-    peek:    { name: '监控', cost: 25, cd: 20, dur: 3, desc: '偷看一个房间 3 秒（点技能后再点房间）' },
-    revisit: { name: '回马枪', cost: 30, cd: 0, window: 10, desc: '刚离开的房间无视冷却再查一次（离开后 10 秒内，每阶段 1 次）' },
-    raid:    { name: '突击检查', cost: 25, cd: 25, offense: 40, desc: '下一次查房不用逗留、无视冷却，但冒犯值 +40' },
-    meeting: { name: '临时会议', cost: 35, cd: 30, dur: 8, immune: 5, freeze: 3, desc: '随机拉走一个正在摸鱼的人开会 8 秒（他的口袋保留），自己定身 3 秒' },
-    fine:    { name: '加倍罚款', cost: 40, cd: 30, extra: 0.3, bankCut: 0.15, minPhase: 1, desc: '下一次抓人没收比例 +30%，另扣对方存款的 15%（第 2 阶段起）' },
+    // 2.5.0 加强：冲刺更久更快；监控改为"6 秒内走近哪个房间就能看到里面"；回马枪窗口更长、每阶段 2 次；突击检查更便宜并额外 +10% 没收；临时会议自己只定身 1 秒；加倍罚款更狠
+    dash:    { name: '冲刺', cost: 20, cd: 12, dur: 6, mult: 1.8, desc: '6 秒内移动 ×1.8' },
+    peek:    { name: '监控', cost: 20, cd: 18, dur: 6, range: 4, desc: '6 秒内，走到哪个房间门口（4 格内）就能看到里面有谁' },
+    revisit: { name: '回马枪', cost: 30, cd: 0, window: 15, perPhase: 2, desc: '刚离开的房间无视冷却再查一次（离开后 15 秒内，每阶段 2 次）' },
+    raid:    { name: '突击检查', cost: 25, cd: 20, extra: 0.1, desc: '下一次查房不用逗留、无视冷却，抓到的人没收比例 +10%' },
+    meeting: { name: '临时会议', cost: 35, cd: 30, dur: 10, immune: 5, freeze: 1, desc: '随机把一个正在摸鱼的人叫出房间，在门口原地开会 10 秒（他的口袋保留），自己定身 1 秒' },
+    fine:    { name: '加倍罚款', cost: 35, cd: 30, extra: 0.4, bankCut: 0.2, minPhase: 1, desc: '下一次抓人没收比例 +40%，另扣对方存款的 20%（第 2 阶段起）' },
   };
   A.BOSS_SKILL_IDS = Object.keys(A.BOSS_SKILLS);
 
   // —— 员工：每个角色 1 个技能；2 级二选一方向（A/B），3 级强化所选方向 ——
   A.LEVELS = { 2: 150, 3: 400 };   // 累计存入多少钱升级
+  // 2.2.0 重做：兔子插队、猫打翻水杯、熊堵门（原猫头鹰锁门）、猫头鹰夜视；where：any 哪都能用 / room 只能在摸鱼房间里 / office 只能在办公区
   A.EMP_SKILLS = {
-    rabbit: { name: '冲刺', where: 'any', base: { cd: 20, dur: 3, mult: 1.7 },
-      A: [{ dur: 5 }, { dur: 6.5 }], B: [{ cd: 10 }, { cd: 7 }], nameA: '持久冲刺', nameB: '快速冷却',
-      descA: '冲刺持续更久（5 秒 / 3 级 6.5 秒）', descB: '冷却更短（10 秒 / 3 级 7 秒）' },
-    cat:    { name: '替身', where: 'any', base: { cd: 35, dur: 15, cut: 0 },
-      A: [{ dur: 25 }, { dur: 35 }], B: [{ cut: 0.3 }, { cut: 0.5 }], nameA: '以假乱真', nameB: '替身挡枪',
-      descA: '替身持续更久（25 秒 / 3 级 35 秒）', descB: '替身期间被抓少扣（−30% / 3 级 −50%）' },
-    bear:   { name: '久蹲', where: 'room', base: { cd: 30, k: 1.5, loss: 1 },
-      A: [{ k: 1.8 }, { k: 2.1 }], B: [{ loss: 0.5 }, { loss: 0.35 }], nameA: '坐穿马桶', nameB: '皮糙肉厚',
-      descA: '这一趟最长停留与收入爬升 ×1.8 / 3 级 ×2.1', descB: '久蹲期间被抓只扣一半 / 3 级扣 35%' },
-    owl:    { name: '锁门', where: 'room', base: { cd: 30, dur: 4, inc: 1 },
-      A: [{ dur: 6 }, { dur: 8 }], B: [{ inc: 1.5 }, { inc: 2 }], nameA: '双重门锁', nameB: '安心摸鱼',
-      descA: '锁更久（6 秒 / 3 级 8 秒）', descB: '锁门期间收入 ×1.5 / 3 级 ×2' },
+    rabbit: { name: '插队', where: 'any', base: { cd: 20, dur: 3, mult: 1.7 },
+      A: [{ dur: 5 }, { dur: 6.5 }], B: [{ cd: 12 }, { cd: 8 }], nameA: '持久冲刺', nameB: '快速冷却',
+      descA: '冲刺持续更久（5 秒 / 3 级 6.5 秒）', descB: '冷却更短（12 秒 / 3 级 8 秒）' },
+    cat:    { name: '打翻水杯', where: 'office', base: { cd: 30, dur: 8, n: 1 },
+      A: [{ dur: 12 }, { dur: 16 }], B: [{ n: 2 }, { n: 3 }], nameA: '泼得更狠', nameB: '连环打翻',
+      descA: '工位锁得更久（12 秒 / 3 级 16 秒）', descB: '一次打翻 2 个工位 / 3 级 3 个' },
+    bear:   { name: '堵门', where: 'room', base: { cd: 40, dur: 4, inc: 1 },   // 2.2.0 模拟后冷却 30 → 40（太强）
+      A: [{ dur: 6 }, { dur: 8 }], B: [{ inc: 1.5 }, { inc: 2 }], nameA: '堵得更久', nameB: '安心摸鱼',
+      descA: '堵得更久（6 秒 / 3 级 8 秒）', descB: '堵门期间收入 ×1.5 / 3 级 ×2' },
+    owl:    { name: '夜视', where: 'any', base: { cd: 20, dur: 4, range: 1.6 },
+      A: [{ dur: 6 }, { dur: 8 }], B: [{ range: 2 }, { range: 2.4 }], nameA: '看得更久', nameB: '千里眼',
+      descA: '夜视更久（6 秒 / 3 级 8 秒）', descB: '看得更远（视野 ×2 / 3 级 ×2.4）' },
   };
   A.EMP_SKILL_DESC = {
-    rabbit: '3 秒内移动 ×1.7', cat: '工位上留假身 15 秒，老板看到的是"你在工位"', bear: '这一趟最长停留与收入爬升 ×1.5（在房间里用）', owl: '把门锁 4 秒，老板进不来（在房间里用）',
+    rabbit: '冲刺 3 秒（移动 ×1.7）；冲刺中能挤进满员的房间，把里面一个人挤出门（他的口袋保留）',
+    cat: '在办公区用：把视野里一个同事的工位锁住 8 秒，期间他没法存钱（优先锁存款最多的人）',
+    bear: '在房间里用：熊往门口一坐，4 秒内老板和其他员工都进不来（门外看不出来）',
+    owl: '4 秒内视野放大 1.6 倍；在房间里用能看到外面（老板在哪、谁往哪走）',
   };
+  // 被动（2.2.0）：一直生效
+  A.PASSIVES = {
+    rabbit: { name: '腿长', desc: '移动速度 +10%', speed: 1.1 },
+    cat:    { name: '手快', desc: '捡补给只要 1 秒（别人 2 秒）', pick: 1 },
+    bear:   { name: '耐蹲', desc: '摸鱼房间最长停留 +20%（收入曲线一起拉长）', stay: 1.2 },
+    owl:    { name: '眼尖', desc: '视野 +2 格', sight: 2 },
+    boss:   { name: '居高临下', desc: '视野比员工大 2 格', sight: 2 },
+  };
+  A.stayMult = a => (A.PASSIVES[a.id] && A.PASSIVES[a.id].stay) || 1;   // 熊：最长停留与收入曲线拉长
   // 当前等级与方向下的技能参数
   A.empSkill = function (a) {
     const S = A.EMP_SKILLS[a.id], p = Object.assign({}, S.base);
@@ -49,8 +63,8 @@
     initSkills() {
       const b = this.boss;
       Object.assign(b, { waitT: this.bossWait, anger: 0, skills: [], skillCd: {}, revisitUsed: {}, lastLeft: null, dashT: 0, freezeT: 0, raidNext: false, fineNext: false, peek: null });
-      this.offer = null; this.phaseIdx = -1; this.locks = {};
-      for (const e of this.employees()) Object.assign(e, { level: 1, branch: null, xp: 0, skillCd: 0, dashT: 0, decoyT: 0, squat: null, doubleT: 0, leaveNote: false, meetingT: 0, immuneT: 0, branchOffer: null, lockRoom: null });
+      this.offer = null; this.phaseIdx = -1; this.locks = {}; this.deskLocks = {};
+      for (const e of this.employees()) Object.assign(e, { level: 1, branch: null, xp: 0, skillCd: 0, dashT: 0, nightT: 0, numbT: 0, doubleT: 0, leaveNote: false, meetingT: 0, immuneT: 0, branchOffer: null, knockT: 0 });
     },
     phaseOf(t) { return Math.min(A.PHASE.count - 1, Math.floor(t / A.PHASE.len)); },
     // 某阶段可选的技能（没拿过的，满足阶段限制），随机 3 个
@@ -81,18 +95,19 @@
         b.waitT = Math.max(0, b.waitT - dt);
         if (b.waitT === 0) { b.x = A.BOSS_ARRIVE.x; b.y = A.BOSS_ARRIVE.y; b.path = []; b.dir = { x: 0, y: 0 }; this.emit({ type: 'bossArrive' }); }
       }
-      if (b.hr <= 0) b.anger = Math.min(A.ANGER.max, b.anger + A.ANGER.perSec * dt);
+      b.anger = Math.min(A.ANGER.max, b.anger + A.ANGER.perSec * dt);
       for (const k in b.skillCd) b.skillCd[k] = Math.max(0, b.skillCd[k] - dt);
       b.dashT = Math.max(0, b.dashT - dt); b.freezeT = Math.max(0, b.freezeT - dt);
       if (b.peek) { b.peek.t -= dt; if (b.peek.t <= 0) b.peek = null; }
       for (const r in this.locks) { this.locks[r].t -= dt; if (this.locks[r].t <= 0) delete this.locks[r]; }
+      for (const d in this.deskLocks) { this.deskLocks[d] -= dt; if (this.deskLocks[d] <= 0) { delete this.deskLocks[d]; this.emit({ type: 'deskFree', desk: +d }); } }
       for (const e of this.employees()) {
-        e.skillCd = Math.max(0, e.skillCd - dt); e.dashT = Math.max(0, e.dashT - dt); e.decoyT = Math.max(0, e.decoyT - dt);
+        e.skillCd = Math.max(0, e.skillCd - dt); e.dashT = Math.max(0, e.dashT - dt); e.nightT = Math.max(0, e.nightT - dt); e.numbT = Math.max(0, e.numbT - dt);
         e.doubleT = Math.max(0, e.doubleT - dt); e.immuneT = Math.max(0, e.immuneT - dt);
         if (e.branchOffer) { e.branchOffer.t -= dt; if (e.branchOffer.t <= 0) this.chooseBranch(e, this.rng() < 0.5 ? 'A' : 'B'); }
-        if (e.meetingT > 0) {   // 开会结束：回到会议室门外，短暂免抓
+        if (e.meetingT > 0) {   // 开会结束：短暂免抓
           e.meetingT = Math.max(0, e.meetingT - dt);
-          if (e.meetingT === 0) { const o = this.grid.outside('meeting'); e.x = o.x; e.y = o.y; e.immuneT = A.BOSS_SKILLS.meeting.immune; this.emit({ type: 'meetingDone', who: e.id }); }
+          if (e.meetingT === 0) { e.immuneT = A.BOSS_SKILLS.meeting.immune; this.emit({ type: 'meetingDone', who: e.id }); }
         }
       }
     },
@@ -100,25 +115,21 @@
     useBossSkill(id, arg) {
       const b = this.boss, S = A.BOSS_SKILLS[id], fail = reason => { this.emit({ type: 'skillFail', who: 'boss', skill: id, reason }); return false; };
       if (this.phase !== 'playing' || !S || !b.skills.includes(id)) return false;
-      if (b.hr > 0) return fail('hr');
       if (b.waitT > 0) return fail('wait');
       if ((b.skillCd[id] || 0) > 0) return fail('cooldown');
       if (b.anger < S.cost) return fail('anger');
       if (id === 'dash') b.dashT = S.dur;
-      else if (id === 'peek') {
-        if (!A.ROOMS[arg] || !A.ROOMS[arg].slack) return fail('target');
-        if (b.room) return fail('inRoom');
-        b.peek = { room: arg, t: S.dur };
-      } else if (id === 'revisit') {
+      else if (id === 'peek') b.peek = { t: S.dur };   // 2.5.0：不用选房间，持续期间走近哪间看哪间（见 peekRooms）
+      else if (id === 'revisit') {
         const ph = this.phaseOf(this.time), L = b.lastLeft;
-        if (b.revisitUsed[ph]) return fail('used');
+        if ((b.revisitUsed[ph] || 0) >= S.perPhase) return fail('used');
         if (!L || this.time - L.t > S.window || b.room || b.stay > 0) return fail('window');
         if (this.locks[L.room]) return fail('locked');
-        b.cooldowns[L.room] = 0; b.revisitUsed[ph] = true;
+        b.cooldowns[L.room] = 0; b.revisitUsed[ph] = (b.revisitUsed[ph] || 0) + 1;
         const cells = this.grid.roomCells(L.room), k = cells[Math.floor(this.rng() * cells.length)]; this.pathTo(b, k.c + 0.5, k.r + 0.5);
       } else if (id === 'raid') b.raidNext = true;
       else if (id === 'meeting') {
-        const list = this.employees().filter(e => e.room && !e.forced && e.immuneT <= 0 && e.meetingT <= 0);
+        const list = this.employees().filter(e => e.room && A.ROOMS[e.room].slack && !e.forced && e.immuneT <= 0 && e.meetingT <= 0);
         if (!list.length) return fail('noTarget');
         const v = pick(list, this.rng); this.sendToMeeting(v); b.freezeT = S.freeze; b.path = [];
       } else if (id === 'fine') b.fineNext = true;
@@ -126,24 +137,39 @@
       this.emit({ type: 'bossSkill', skill: id, room: arg });
       return true;
     },
+    // 临时会议（2.2.0）：被叫出房间，站在门口原地开会（不再传送到会议室）
     sendToMeeting(v) {
-      const room = v.room; v.forced = true; this.leave(v); v.forced = false; v.path = []; v.dir = { x: 0, y: 0 }; v.squat = null;
-      const cells = this.grid.cells.filter(k => k.room === 'meeting'), k = cells[Math.floor(cells.length / 2)];
-      v.x = k.c + 0.5; v.y = k.r + 0.5; v.meetingT = A.BOSS_SKILLS.meeting.dur;
+      const room = v.room; v.forced = true; this.leave(v); v.forced = false; v.path = []; v.dir = { x: 0, y: 0 };
+      const o = this.grid.outside(room); v.x = o.x; v.y = o.y; v.meetingT = A.BOSS_SKILLS.meeting.dur;
       this.emit({ type: 'meeting', who: v.id, room });
+    },
+    // 监控中、老板在办公区时，门在 4 格内的摸鱼房间（看得到里面）
+    peekRooms() {
+      const b = this.boss; if (!b.peek || b.room || b.waitT > 0) return [];
+      return A.SLACK_ROOMS.filter(id => { const o = this.grid.outside(id); return Math.hypot(b.x - o.x, b.y - o.y) <= A.BOSS_SKILLS.peek.range; });
+    },
+    // 猫：能打翻的工位（视野里、别人的、还没被锁的），存款多的优先
+    deskTargets(a) {
+      return this.employees().filter(e => e !== a && !(this.deskLocks[e.desk.id] > 0) && (() => { const s = A.seatOf(e.desk); return A.inSight(a, s.x, s.y); })()).sort((p, q) => q.banked - p.banked);
     },
     // 员工放技能
     useEmpSkill(a) {
       const S = A.EMP_SKILLS[a.id], p = A.empSkill(a), fail = reason => { this.emit({ type: 'skillFail', who: a.id, skill: a.id, reason }); return false; };
       if (this.phase !== 'playing' || !S || a.meetingT > 0) return false;
       if (a.skillCd > 0) return fail('cooldown');
-      if (S.where === 'room' && (!a.room || a.forced)) return fail('room');
+      if (S.where === 'room' && (!a.room || a.forced || !A.ROOMS[a.room].slack)) return fail('room');
+      if (S.where === 'office' && a.room) return fail('office');
+      let targets = null;
       if (a.id === 'rabbit') a.dashT = p.dur;
-      else if (a.id === 'cat') a.decoyT = p.dur;
-      else if (a.id === 'bear') { if (a.squat) return fail('used'); a.squat = { k: p.k, loss: p.loss }; }
-      else if (a.id === 'owl') { this.locks[a.room] = { t: p.dur, by: a.id, inc: p.inc }; }
+      else if (a.id === 'cat') {   // 打翻水杯：锁住视野里 n 个同事的工位
+        targets = this.deskTargets(a).slice(0, p.n); if (!targets.length) return fail('noTarget');
+        for (const e of targets) { this.deskLocks[e.desk.id] = p.dur; this.emit({ type: 'deskLock', who: e.id, by: a.id, desk: e.desk.id, t: p.dur }); }
+        targets = targets.map(e => e.id);
+      }
+      else if (a.id === 'bear') { this.locks[a.room] = { t: p.dur, t0: p.dur, by: a.id, inc: p.inc }; }   // 堵门
+      else if (a.id === 'owl') a.nightT = p.dur;   // 夜视
       a.skillCd = p.cd;
-      this.emit({ type: 'empSkill', who: a.id, skill: a.id, room: a.room });
+      this.emit({ type: 'empSkill', who: a.id, skill: a.id, room: a.room, targets });
       return true;
     },
     // 升级：累计存入的钱；培训手册直接升一级

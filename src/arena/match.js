@@ -6,7 +6,7 @@
   const A = OS.arena = OS.arena || {};
 
   // 房间收入曲线：进门后从 floor×峰值 爬到峰值（rise 秒），之后递减，到最长停留时回落到 floor×峰值
-  // stretch：熊"久蹲"时爬升时间和最长停留一起拉长
+  // stretch：熊的被动"耐蹲"让爬升时间和最长停留一起拉长
   A.rate = function (roomId, t, stretch) {
     const R = A.ROOMS[roomId]; if (!R || !R.slack) return 0;
     const s = stretch || 1, rise = R.rise * s, maxStay = R.maxStay * s;
@@ -45,7 +45,7 @@
       this.actors = chars.map((id, i) => this.makeEmployee(id, desks[i], i === 0 && role === 'employee'));
       const bcd = {}; A.SLACK_ROOMS.forEach(r => (bcd[r] = 0));
       this.boss = { id: 'boss', kind: 'boss', name: '老板', x: A.BOSS_SPAWN.x, y: A.BOSS_SPAWN.y, path: [], dir: { x: 0, y: 0 }, room: null, isPlayer: false, facing: 1, moving: false,
-        stay: 0, cooldowns: bcd, offense: 0, hr: 0, stats: { checks: 0, empty: 0, catches: 0, confiscated: 0, score: 0 } };
+        stay: 0, cooldowns: bcd, stats: { checks: 0, empty: 0, catches: 0, confiscated: 0, score: 0 } };
       this.boss.isPlayer = role === 'boss';
       this.actors.push(this.boss);
       this.player = role === 'boss' ? this.boss : this.actors[0];
@@ -56,13 +56,13 @@
       this.lureIdle = {}; A.SLACK_ROOMS.forEach(r => (this.lureIdle[r] = 0));
       this.noBossSkills = !!opts.noBossSkills;
       this.bossWait = opts.bossWait != null ? opts.bossWait : A.BOSS_ARRIVE.wait;   // 测试可传 0：老板开局就在办公室门口能动   // 测试用：老板不拿技能
-      this.initSkills(); this.initSupplies();   // A4：技能、升级、补给（skills.js / supply.js）
+      this.initSkills(); this.initSupplies(); this.initEvents();   // A4：技能、升级、补给（skills.js / supply.js）；B2：随机事件（events.js）
     }
     makeEmployee(id, desk, isPlayer) {
-      const s = A.seatOf(desk), cds = {}; A.SLACK_ROOMS.forEach(r => (cds[r] = 0));
+      const s = A.seatOf(desk), cds = {}; A.ENTER_ROOMS.forEach(r => (cds[r] = 0));
       return { id, kind: 'employee', name: A.CHARACTERS[id].name, desk, x: s.x, y: s.y, path: [], dir: { x: 0, y: 0 }, room: null, roomTime: 0,
         pocket: 0, banked: 0, cooldowns: cds, forced: false, stun: 0, isPlayer, facing: 1, moving: false, lure: 1, officeTime: 0, combo: 0,
-        stats: { roomTime: { restroom: 0, pantry: 0, rooftop: 0 }, deposits: 0, entries: 0 } };
+        stats: { roomTime: { print: 0, pantry: 0, rooftop: 0, toilet: 0 }, deposits: 0, entries: 0 } };
     }
     get(id) { return this.actors.find(a => a.id === id); }
     employees() { return this.actors.filter(a => a.kind === 'employee'); }
@@ -70,21 +70,30 @@
     emit(ev) { this.events.push(ev); }
     drainEvents() { const e = this.events; this.events = []; return e; }
 
-    // 能否进入某房间；返回 null 表示可以，否则返回原因：locked / cooldown / full
+    // 能否进入某房间；返回 null 表示可以，否则返回原因：locked / lockedDoor / stay / cooldown / boss / full
     entryBlock(a, roomId) {
       const R = A.ROOMS[roomId];
       if (a.room === roomId) return null;
-      if (this.locks && this.locks[roomId]) return 'lockedDoor';   // 猫头鹰锁门：谁都进不去
+      if (this.locks && this.locks[roomId]) return 'lockedDoor';   // 熊堵门：谁都进不去
+      if (this.closed && this.closed[roomId] > 0) return 'closed';   // 随机事件：打印机卡纸，暂时关闭
       if (a.kind === 'boss') {
+        if (!R.slack) return 'locked';                       // 老板不能进厕所
         if (a.stay > 0) return 'stay';                       // 职场边界感：查房要待满逗留时间
-        if (R.slack && a.cooldowns[roomId] > 0 && !a.raidNext) return 'cooldown';   // 突击检查无视冷却
+        if (a.cooldowns[roomId] > 0 && !a.raidNext) return 'cooldown';   // 突击检查无视冷却
         return null;
       }
-      if (!R.slack) return 'locked';
+      if (!R.slack && !R.safe) return 'locked';
       if (this.boss.room === roomId) return 'boss';           // 老板在里面
       if (a.cooldowns[roomId] > 0) return 'cooldown';
-      if (this.occupants(roomId).filter(e => e.kind === 'employee').length >= R.cap) return 'full';
+      if (this.occupants(roomId).filter(e => e.kind === 'employee').length >= R.cap && !this.canBump(a, roomId)) return 'full';
       return null;
+    }
+    // 兔子插队：冲刺中能挤进满员的摸鱼房间
+    canBump(a, roomId) { return a.id === 'rabbit' && a.dashT > 0 && A.ROOMS[roomId].slack && this.occupants(roomId).some(e => e.kind === 'employee' && !e.forced); }
+    // 被挤出门：口袋保留，这间房进入冷却
+    bump(v, by) {
+      const room = v.room; v.forced = true; v.path = []; v.dir = { x: 0, y: 0 }; const o = this.grid.outside(room); this.pathTo(v, o.x, o.y);
+      this.emit({ type: 'bumped', who: v.id, by: by.id, room });
     }
     canPass(a, cell) {
       if (!cell || cell.wall) return false;
@@ -142,14 +151,20 @@
     }
     // 员工进房间后还没待满最少停留时间（自动出门时不受限）
     mustStay(a) { return a.kind === 'employee' && !!a.room && !a.forced && a.roomTime < A.ECON.minStay; }
-    // 不能操作的状态：自动出门、罚站、HR 约谈、被拉去开会、老板开会定身
-    busy(a) { return a.forced || a.stun > 0 || a.hr > 0 || a.meetingT > 0 || a.freezeT > 0 || a.waitT > 0; }   // waitT：老板开局等待
+    // 不能操作的状态：自动出门、罚站、被拉去开会、老板开会定身 / 接电话、踩香蕉皮滑倒
+    busy(a) { return a.forced || a.stun > 0 || a.meetingT > 0 || a.freezeT > 0 || a.waitT > 0 || a.slipT > 0; }   // waitT：老板开局等待
+    // 头名悬赏：存款第一（至少 $50、并且没有并列）的员工；老板抓到他收益 ×1.5
+    leader() { const E = this.employees().slice().sort((p, q) => q.banked - p.banked); return E[0] && E[0].banked >= A.BOUNTY.min && E[0].banked > E[1].banked ? E[0] : null; }
+    // 员工之间的实时名次（只比存款，1 = 第一）
+    rankOf(a) { return 1 + this.employees().filter(e => e !== a && e.banked > a.banked).length; }
     exitRoom(a) {
       if (!a.room || this.busy(a)) return false;
       if (a.kind === 'boss' && a.stay > 0) { this.emit({ type: 'blocked', who: a.id, room: a.room, reason: 'stay' }); return false; }
       if (this.mustStay(a)) { this.emit({ type: 'blocked', who: a.id, room: a.room, reason: 'minStay' }); return false; }
       const o = this.grid.outside(a.room); return this.pathTo(a, o.x, o.y);
     }
+    // 工位被猫打翻水杯：锁着的剩余秒数
+    deskLocked(a) { return a.desk && this.deskLocks ? this.deskLocks[a.desk.id] || 0 : 0; }
     // 回工位：主动操作，走到自己工位后才存钱（已经在工位旁就下一帧存）
     goDesk(a) { if (!a.desk || this.busy(a) || a.room) return false; const s = A.seatOf(a.desk); if (!this.pathTo(a, s.x, s.y)) return false; a.depositIntent = true; return true; }
     // 一个按钮的情境操作：在房间里 = 出门；在外面 = 回工位
@@ -168,7 +183,7 @@
       if (this.phase !== 'playing') return;
       this.time += dt; this.left = Math.max(0, this.left - dt);
       if (!this.rush && this.left <= A.RUSH.time) { this.rush = true; this.emit({ type: 'rush' }); }   // 下班冲刺
-      this.updateSkills(dt);
+      this.updateSkills(dt); this.updateEvents(dt);
       if (this.bossAI) this.bossAI.think(dt);
       for (const ai of this.empAI) ai.think(dt);
       for (const r of A.SLACK_ROOMS) if (!this.employees().some(e => e.room === r)) this.lureIdle[r] += dt;
@@ -179,12 +194,15 @@
     step(a, dt) {
       const g = this.grid, here = g.cellAt(a.x, a.y);
       let speed = (a.kind === 'boss' ? A.MOVE.boss : A.MOVE.employee) * (here && here.stairs ? A.MOVE.stairs : 1);
-      if (a.kind === 'boss' && a.offense > A.BOSS.slowAt) speed *= A.BOSS.slowMult;   // 冒犯值过半：大家故意磨蹭让路
+      if (a.kind === 'employee' && A.PASSIVES[a.id] && A.PASSIVES[a.id].speed) speed *= A.PASSIVES[a.id].speed;   // 兔子被动：腿长
+      if (a.numbT > 0) speed *= A.ROOMS.toilet.numbMult;   // 蹲厕所出来腿麻 / 腿抽筋
+      if (a.fastT > 0) speed *= A.EVENT_PERSONAL.coffee.mult;   // 随机事件：咖啡因
+      if (a.kind === 'boss' && this.bossBoostT > 0) speed *= 1.3;   // 随机事件：领导视察
       if (a.dashT > 0) speed *= a.kind === 'boss' ? A.BOSS_SKILLS.dash.mult : A.empSkill(a).mult;   // 冲刺
       if (a.kind === 'boss' && this.rush) speed *= A.RUSH.bossSpeed;   // 下班冲刺：老板也加速
-      const frozen = a.stun > 0 || a.hr > 0 || a.freezeT > 0 || a.meetingT > 0 || a.waitT > 0;
+      const frozen = a.stun > 0 || a.freezeT > 0 || a.meetingT > 0 || a.waitT > 0 || a.slipT > 0;
       let moved = false;
-      if (frozen) { /* 罚站 / 被 HR 约谈：不能动 */ }
+      if (frozen) { /* 罚站 / 开会：不能动 */ }
       else if (a.path.length) {
         const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), s = speed * dt;
         if (d <= s) { a.x = p.x; a.y = p.y; a.path.shift(); } else { a.x += dx / d * s; a.y += dy / d * s; }
@@ -198,25 +216,20 @@
       a.moving = moved;
       if (a.kind === 'employee') this.stepEmployee(a, dt); else this.stepBoss(a, dt);
     }
-    // 老板：进门即查房（房里所有员工按比例没收口袋），逗留、再查冷却、冒犯值、HR 约谈
+    // 老板：进门即查房（房里所有员工按比例没收口袋），逗留、再查冷却；查空房扣怒气（2.2.0 取消冒犯值和 HR 约谈）
     stepBoss(b, dt) {
-      const B = A.BOSS;
       for (const r in b.cooldowns) b.cooldowns[r] = Math.max(0, b.cooldowns[r] - dt);
-      if (b.hr > 0) { b.hr = Math.max(0, b.hr - dt); if (b.hr === 0) { b.offense = B.hrReset; this.emit({ type: 'hrDone' }); } return; }
-      b.offense = Math.max(0, b.offense - B.offenseDecay * dt);
       if (b.stay > 0) b.stay = Math.max(0, b.stay - dt);
       const cell = this.grid.cellAt(b.x, b.y), zone = cell && cell.room && A.ROOMS[cell.room].slack ? cell.room : null;
-      if (zone && b.room !== zone && this.locks[zone]) {   // 门被锁了：弹回门外
+      if (zone && b.room !== zone && this.locks[zone]) {   // 门被熊堵住：弹回门外
         const o = this.grid.outside(zone); b.x = o.x; b.y = o.y; b.path = []; this.emit({ type: 'blocked', who: 'boss', room: zone, reason: 'lockedDoor' });
       } else if (zone && b.room !== zone) {
-        const R = A.ROOMS[zone], raid = b.raidNext; b.room = zone; b.stay = raid ? 0 : R.bossStay; b.raidNext = false; b.stats.checks++;
+        const R = A.ROOMS[zone], raid = b.raidNext; b.room = zone; b.stay = raid ? 0 : R.bossStay; b.raidNext = false; b.stats.checks++; b.raidCatch = raid;
         const inRoom = this.employees().filter(e => e.room === zone && e.immuneT <= 0), caught = inRoom.filter(e => this.catchEmployee(e, zone));
-        b.fineNext = false;
-        if (!inRoom.length) b.stats.empty++;
+        b.fineNext = false; b.raidCatch = false;
+        if (!inRoom.length) { b.stats.empty++; b.anger = Math.max(0, b.anger - A.BOSS.emptyAnger); }   // 查空房：扣怒气
         b.anger = Math.min(A.ANGER.max, b.anger + A.ANGER.perCatch * caught.length);
-        b.offense = Math.min(B.offenseMax, b.offense + (inRoom.length ? R.offenseCatch : R.offenseEmpty) + (raid ? A.BOSS_SKILLS.raid.offense : 0));
-        this.emit({ type: 'check', room: zone, caught: caught.map(e => e.id) });
-        if (b.offense >= B.offenseMax) { b.hr = B.hrTime; b.stay = 0; b.path = []; this.emit({ type: 'complaint' }); }
+        this.emit({ type: 'check', room: zone, caught: caught.map(e => e.id), empty: !inRoom.length });
       } else if (!zone && b.room && !(cell && cell.door === b.room)) {
         const R = A.ROOMS[b.room]; b.cooldowns[b.room] = R.bossCdMin + this.rng() * (R.bossCdMax - R.bossCdMin); b.lastLeft = { room: b.room, t: this.time }; this.emit({ type: 'bossLeave', room: b.room }); b.room = null; b.stay = 0;
       }
@@ -228,18 +241,18 @@
         e.leaveNote = false; e.path = []; e.forced = true; const o = this.grid.outside(roomId); this.pathTo(e, o.x, o.y);
         this.emit({ type: 'excused', who: e.id, room: roomId }); return false;
       }
-      let ratio = A.penaltyRatio(roomId, e.roomTime, e.squat ? e.squat.k : 1);
+      const bounty = this.leader() === e;   // 头名悬赏
+      let ratio = A.penaltyRatio(roomId, e.roomTime, A.stayMult(e));
       if (b.fineNext) ratio = Math.min(1, ratio + F.extra);                         // 加倍罚款
-      if (e.decoyT > 0) ratio *= 1 - A.empSkill(e).cut;                            // 猫：替身挡枪
-      if (e.squat) ratio *= e.squat.loss;                                           // 熊：皮糙肉厚
+      if (b.raidCatch) ratio = Math.min(1, ratio + A.BOSS_SKILLS.raid.extra);         // 突击检查：额外 +10%
       let lost = e.pocket * ratio; e.pocket -= lost;
       if (b.fineNext) { const cut = e.banked * F.bankCut; e.banked -= cut; lost += cut; }
       e.combo = 0; e.stun = A.PENALTY.stun; e.path = [];
       if (!(e.stun > 0)) { e.forced = true; const o = this.grid.outside(roomId); this.pathTo(e, o.x, o.y); }   // 先标记自动出门，才不受最少停留限制
       e.dir = { x: 0, y: 0 }; e.stats.caught = (e.stats.caught || 0) + 1; e.stats.lost = (e.stats.lost || 0) + lost;
-      const bs = this.boss.stats, cm = A.catchMult(bs.catches); bs.score += lost * cm;   // 抓人收益逐次递增：×1 → ×1.1 → ×1.2 → ×1.3
-      bs.catches++; bs.confiscated += lost;
-      this.emit({ type: 'caught', who: e.id, room: roomId, ratio, lost, mult: cm });
+      const bs = this.boss.stats, cm = A.catchMult(bs.catches) * (bounty ? A.BOUNTY.mult : 1); bs.score += lost * cm;   // 抓人收益逐次递增：×1 → ×1.15 → ×1.3 → ×1.45 → ×1.5；抓到头名再 ×1.25
+      bs.catches++; bs.confiscated += lost; if (bounty) bs.bounties = (bs.bounties || 0) + 1;
+      this.emit({ type: 'caught', who: e.id, room: roomId, ratio, lost, mult: cm, bounty });
       return true;
     }
     // 碰撞：角色四角都要能走
@@ -256,18 +269,27 @@
         if (a.stun === 0 && a.room) { a.forced = true; const o = this.grid.outside(a.room); this.pathTo(a, o.x, o.y); }
         if (a.room) return;
       }
-      const cell = this.grid.cellAt(a.x, a.y), zone = cell && cell.room && A.ROOMS[cell.room].slack ? cell.room : null;
+      const cell = this.grid.cellAt(a.x, a.y), zone = cell && cell.room && (A.ROOMS[cell.room].slack || A.ROOMS[cell.room].safe) ? cell.room : null;
       if (zone && a.room !== zone) {
         if (a.room) this.leave(a);
         const why = this.entryBlock(a, zone);
         if (why) { const o = this.grid.outside(zone); a.x = o.x; a.y = o.y; a.path = []; this.emit({ type: 'blocked', who: a.id, room: zone, reason: why }); }   // 走到一半老板进去了 / 同时挤门：弹回门外
-        else { a.room = zone; a.roomTime = 0; a.depositIntent = false; a.stats.entries++; a.lure = this.lure(zone); this.lureIdle[zone] = 0; a.officeTime = 0; a.combo++; this.emit({ type: 'enter', who: a.id, room: zone, lure: a.lure }); }
+        else if (A.ROOMS[zone].safe) { a.room = zone; a.roomTime = 0; a.depositIntent = false; a.officeTime = 0; a.toiletCap = A.ROOMS[zone].maxStay; a.knocked = false; this.emit({ type: 'enter', who: a.id, room: zone, lure: 1 }); }   // 厕所：不算连摸
+        else {
+          const full = this.occupants(zone).filter(e => e.kind === 'employee' && e !== a);
+          if (full.length >= A.ROOMS[zone].cap) { const v = full.find(e => !e.forced); if (v) this.bump(v, a); }   // 兔子插队：挤出去一个
+          a.room = zone; a.roomTime = 0; a.depositIntent = false; a.stats.entries++; a.lure = this.lure(zone); this.lureIdle[zone] = 0; a.officeTime = 0; a.combo++; this.emit({ type: 'enter', who: a.id, room: zone, lure: a.lure });
+        }
       } else if (!zone && a.room && !(cell && cell.door === a.room)) this.leave(a);   // 站在自己房间的门槛上还算在房间里
-      if (a.room) {
-        const R = A.ROOMS[a.room], k = a.squat ? a.squat.k : 1, lock = this.locks[a.room];
+      if (a.room && A.ROOMS[a.room].safe) {   // 厕所：安全，固定小收入直接存入；到时间（或被敲门后的一半时间）自动出门
+        const R = A.ROOMS[a.room]; a.roomTime += dt; a.stats.roomTime[a.room] += dt;
+        if (!a.forced) a.banked += R.wage * dt;
+        if (a.roomTime >= a.toiletCap && !a.forced) { a.forced = true; const o = this.grid.outside(a.room); this.pathTo(a, o.x, o.y); this.emit({ type: 'forced', who: a.id, room: a.room }); }
+      } else if (a.room) {
+        const R = A.ROOMS[a.room], k = A.stayMult(a), lock = this.locks[a.room];
         a.roomTime += dt; a.stats.roomTime[a.room] += dt;
-        // 收入 = 曲线 × 空房倍率 × 双倍卡 × 锁门加成（猫头鹰 B 方向）；出门途中不再赚
-        const mult = a.lure * (a.doubleT > 0 ? 2 : 1) * (lock && lock.by === a.id ? lock.inc : 1) * (this.rush ? A.RUSH.income : 1);
+        // 收入 = 曲线 × 空房倍率 × 双倍卡 × 堵门加成（熊 B 方向）；出门途中不再赚
+        const mult = a.lure * (a.doubleT > 0 ? 2 : 1) * (lock && lock.by === a.id ? lock.inc : 1) * (this.rush ? A.RUSH.income : 1) * this.eventIncome(a.room);   // 随机事件：下午茶 / 晚霞
         if (!cell.stairs && !a.forced) a.pocket += A.rate(a.room, a.roomTime, k) * mult * dt;
         if (a.roomTime >= R.maxStay * k && !a.forced) {   // 到时间：自动出门
           a.forced = true; const o = this.grid.outside(a.room); this.pathTo(a, o.x, o.y);
@@ -276,11 +298,17 @@
       } else {
         a.officeTime += dt;
         a.banked += (a.officeTime > A.ECON.idleAfter ? A.ECON.idleWage : A.ECON.baseWage) * dt;   // 在办公区待太久，工资变低
-        const s = A.seatOf(a.desk);
-        if (a.depositIntent && Math.hypot(a.x - s.x, a.y - s.y) <= A.ECON.depositRange) a.depositIntent = a.pocket > 0;   // 到了但没钱：取消
-        if (a.depositIntent && a.pocket > 0 && Math.hypot(a.x - s.x, a.y - s.y) <= A.ECON.depositRange) {
+        this.knock(a, dt);
+        const s = A.seatOf(a.desk), atDesk = Math.hypot(a.x - s.x, a.y - s.y) <= A.ECON.depositRange;
+        if (a.depositIntent && atDesk) a.depositIntent = a.pocket > 0;   // 到了但没钱：取消
+        if (a.depositIntent && a.pocket > 0 && atDesk && this.deskLocked(a) > 0) {   // 工位被打翻了：等锁解开（意图保留，解开就存）
+          if (!a.deskWarned) { a.deskWarned = true; this.emit({ type: 'deskLocked', who: a.id, t: this.deskLocked(a) }); }
+        } else if (a.depositIntent && a.pocket > 0 && atDesk) {
+          a.deskWarned = false;
           a.depositIntent = false;
-          const mult = A.comboMult(a.combo), amt = a.pocket * mult; a.banked += amt; a.pocket = 0; a.stats.deposits++;
+          const mult = A.comboMult(a.combo) * (a.inspire || 1); let amt = a.pocket * mult; a.inspire = 0; a.pocket = 0; a.stats.deposits++;   // 灵感爆发：这次 ×1.5
+          const st = this.stealBy; if (st && st.by !== a.id) { const cut = amt * A.SUPPLY.items.steal.cut; amt -= cut; const thief = this.get(st.by); thief.banked += cut; this.stealBy = null; this.emit({ type: 'stolen', who: a.id, by: thief.id, amount: cut }); }   // 抢功劳
+          a.banked += amt;
           a.stats.maxCombo = Math.max(a.stats.maxCombo || 1, mult);
           this.emit({ type: 'deposit', who: a.id, amount: amt, base: amt / mult, mult, combo: a.combo }); a.combo = 0;
           this.gainXp(a, amt);
@@ -288,9 +316,17 @@
       }
     }
     leave(a) {
-      const id = a.room; a.room = null; a.roomTime = 0; a.forced = false; a.squat = null;
-      a.cooldowns[id] = A.ROOMS[id].cooldown;
+      const id = a.room, R = A.ROOMS[id]; a.room = null; a.roomTime = 0; a.forced = false;
+      a.cooldowns[id] = R.cooldown;
+      if (R.safe) a.numbT = R.numb;   // 蹲完腿麻
       this.emit({ type: 'exit', who: a.id, room: id, pocket: a.pocket });
+    }
+    // 敲厕所门：在厕所门口站着（不走动）满 2 秒，里面的人剩余时间减半（每次只能被敲一次）
+    knock(a, dt) {
+      const R = A.ROOMS.toilet, o = this.grid.outside('toilet'), v = this.employees().find(e => e.room === 'toilet' && !e.forced);
+      if (!v || a.moving || Math.hypot(a.x - o.x, a.y - o.y) > 1 || v.knocked) { a.knockT = 0; return; }
+      a.knockT = (a.knockT || 0) + dt;
+      if (a.knockT >= R.knock) { a.knockT = 0; v.knocked = true; v.toiletCap = v.roomTime + (v.toiletCap - v.roomTime) / 2; this.emit({ type: 'knock', who: v.id, by: a.id }); }
     }
     // 结算称号：按本局数据评出，没人符合就不发，最多 4 个
     awards() {
@@ -298,7 +334,7 @@
       const top = (f, min) => { let best = null, v = min; for (const e of E) { const x = f(e); if (x >= v && (!best || x > f(best))) { best = e; v = x; } } return best; };
       // 门槛按 2.0.0 模拟的中位数附近设定，每个称号大约一半的局会出现；给老板留一个位置
       const T = A.AWARDS, add = (list, who, title, text) => { if (who) list.push({ who: who.id, name: who.name, title, text }); };
-      let w = top(e => e.stats.roomTime.restroom, T.restroom); add(out, w, '厕所钉子户', w && '在厕所待了 ' + Math.round(w.stats.roomTime.restroom) + ' 秒');
+      let w = top(e => e.stats.roomTime.print, T.print); add(out, w, '打印狂人', w && '在打印室待了 ' + Math.round(w.stats.roomTime.print) + ' 秒');
       w = top(e => e.stats.roomTime.rooftop, T.rooftop); add(out, w, '天台常住民', w && '在天台待了 ' + Math.round(w.stats.roomTime.rooftop) + ' 秒');
       w = top(e => e.stats.maxCombo || 1, T.combo); add(out, w, '连摸大师', w && '一次存钱连摸 ×' + w.stats.maxCombo.toFixed(1));
       w = top(e => e.stats.caught || 0, T.caught); add(out, w, '倒霉蛋', w && '被抓了 ' + w.stats.caught + ' 次');
@@ -310,6 +346,6 @@
     // 排名（按已存金额）
     ranking() { return this.employees().slice().sort((p, q) => q.banked - p.banked); }
   }
-  A.installSkills(Match); A.installSupplies(Match);
+  A.installSkills(Match); A.installSupplies(Match); A.installEvents(Match);
   A.Match = Match;
 })(typeof window !== 'undefined' ? window : globalThis);

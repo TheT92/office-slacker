@@ -1,7 +1,7 @@
 // 摸鱼大作战（A6）：AI 老板难度、只用看得到的信息、难度设置、平衡模拟工具
 const test = require('node:test'), assert = require('node:assert');
 const { OS, mulberry32 } = require('./helper');
-['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/match', 'arena/app'].forEach(m => require('../src/' + m + '.js'));
+['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/events', 'arena/match', 'arena/app'].forEach(m => require('../src/' + m + '.js'));
 const A = OS.arena;
 const tick = (m, sec, dt = 1 / 60) => { for (let t = 0; t < sec - 1e-9; t += dt) m.update(dt); };
 // 有 AI 老板、没有 AI 员工（员工由测试手动操作），老板直接在办公区
@@ -39,9 +39,9 @@ test('老板在房间里看不到外面：这时候进房间的人，出来后�
   const m = mk('hard'), p = m.player, b = m.boss, ai = m.bossAI; ai.t = 99;
   const c = m.grid.roomCells('rooftop').slice(-1)[0]; m.pathTo(b, c.c + 0.5, c.r + 0.5); ai.mode = 'go'; ai.target = 'rooftop';
   for (let i = 0; i < 2400 && b.room !== 'rooftop'; i++) m.update(1 / 60); assert.strictEqual(b.room, 'rooftop');
-  walkIn(m, p, 'restroom'); assert.strictEqual(ai.belief[p.id], undefined, '在房间里看不到');
+  walkIn(m, p, 'print'); assert.strictEqual(ai.belief[p.id], undefined, '在房间里看不到');
   for (let i = 0; i < 1200 && b.room; i++) m.update(1 / 60); tick(m, 0.2);
-  assert.ok(!ai.belief[p.id] || ai.belief[p.id].room !== 'restroom', '出来后也不知道他在厕所');
+  assert.ok(!ai.belief[p.id] || ai.belief[p.id].room !== 'print', '出来后也不知道他在厕所');
 });
 
 test('猫的替身骗过 AI 老板：放了替身再进房间，老板以为猫还在工位', () => {
@@ -61,15 +61,15 @@ test('困难：优先查推算出有人的房间（不读房间里的真实人�
   assert.ok(hits >= 11, '困难几乎每次都去推算的房间：' + hits + '/12');
   // 推算错了（偷偷换了房间）也照样去推算的那间——说明它没有读真实人数
   const m = mk('hard'), p = m.player, ai = m.bossAI; ai.t = 99; walkIn(m, p, 'rooftop'); tick(m, 0.1);
-  ai.belief[p.id] = { room: 'restroom', since: m.time - 10 }; ai.t = 0; let tgt = null;
+  ai.belief[p.id] = { room: 'print', since: m.time - 10 }; ai.t = 0; let tgt = null;
   for (let i = 0; i < 600 && !tgt; i++) { m.update(1 / 60); if (ai.mode === 'go') tgt = ai.target; }
-  assert.strictEqual(tgt, 'restroom');
+  assert.strictEqual(tgt, 'print');
 });
 
 test('查完一个房间，那间的推算清零（抓到的人出来了 / 没人说明记错了）', () => {
-  const m = mk('hard'), ai = m.bossAI; ai.belief = { cat: { room: 'pantry', since: 0 }, bear: { room: 'restroom', since: 0 } };
+  const m = mk('hard'), ai = m.bossAI; ai.belief = { cat: { room: 'pantry', since: 0 }, bear: { room: 'print', since: 0 } };
   ai.checked('pantry'); assert.deepStrictEqual(Object.keys(ai.belief), ['bear']);
-  const s = ai.scores(); assert.ok(s.restroom > s.pantry && s.restroom > s.rooftop);
+  const s = ai.scores(); assert.ok(s.print > s.pantry && s.print > s.rooftop);
 });
 
 test('难度设置：标题页选的难度会记住，开局交给 AI 老板', () => {

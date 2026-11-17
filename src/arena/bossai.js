@@ -3,7 +3,7 @@
 // - 普通 / 困难：只用真人老板也看得到的信息——站在办公区时只看得到自己视野（A.SIGHT）里的人，
 //   亲眼看到谁走进了哪扇门就记下"谁进了哪间、进去多久了"，优先查"人多、待得久"的房间；
 //   视野外的事一概不知；平时多在门附近转悠（看得到门）；自己在房间里时看不到外面，记录不更新；
-//   猫的替身会骗过它（看到"猫在工位"）。普通会记错一部分、偶尔随便挑；困难记得准、出手快、技能用得准。
+//   （2.2.0 起猫不再有替身。）普通会记错一部分、偶尔随便挑；困难记得准、出手快、技能用得准。
 // 老板看不见房间里面：除了"监控"技能，从不读取房间里的真实人数。只通过和玩家相同的指令操作老板。
 (function (root) {
   const OS = root.OS = root.OS || {};
@@ -11,11 +11,11 @@
 
   // wrong：记错房间的概率；smart：按推算挑房间（否则随便挑）的概率；revisit：看到有人跟进刚查完的房间时放回马枪的概率
   A.DIFFICULTY = {
-    // calm：冒犯值超过多少就先缓一缓；calmP：缓一缓的概率（越聪明越会控制冒犯值，避免被投诉）；patrol：转悠时去门口附近盯着的概率
+    // calmP：怒气见底又没把握时先缓一缓的概率（2.2.0 取消冒犯值后改用怒气）；patrol：转悠时去"盯门位"的概率
     // 2.0.0 用 tools/arena-sim.js 各跑 400 局调出；2.1.0 竖屏大地图 + 视野限制后重调 patrol / 困难的 calm（见 docs/DESIGN.md 平衡总表）
-    easy:   { name: '简单', track: false, idle: [3.5, 7], wrong: 0, smart: 0, revisit: 0.35, calm: 70, calmP: 0.6 },
-    normal: { name: '普通', track: true, idle: [1.1, 2.8], wrong: 0.15, smart: 0.9, revisit: 0.6, calm: 70, calmP: 0.7, patrol: 0.6 },
-    hard:   { name: '困难', track: true, idle: [0.3, 1], wrong: 0, smart: 1, revisit: 0.95, calm: 70, calmP: 0.7, patrol: 0.8 },
+    easy:   { name: '简单', track: false, idle: [3.5, 7], wrong: 0, smart: 0, revisit: 0.35, calmP: 0 },
+    normal: { name: '普通', track: true, idle: [1.1, 2.8], wrong: 0.15, smart: 0.9, revisit: 0.6, calmP: 0.5, patrol: 0.6 },
+    hard:   { name: '困难', track: true, idle: [0.3, 1], wrong: 0, smart: 1, revisit: 0.95, calmP: 0.8, patrol: 0.8 },
   };
   A.DIFFICULTY_IDS = ['easy', 'normal', 'hard'];
 
@@ -46,27 +46,25 @@
       for (let i = 0; i < 12; i++) { const k = list[Math.floor(this.rnd() * list.length)]; if (this.m.canPass(b, k)) return { x: k.c + 0.5, y: k.r + 0.5 }; }
       return null;
     }
-    can(id) { const b = this.m.boss, S = A.BOSS_SKILLS[id]; return b.skills.includes(id) && !(b.skillCd[id] > 0) && b.anger >= S.cost && !(b.hr > 0); }
+    can(id) { const b = this.m.boss, S = A.BOSS_SKILLS[id]; return b.skills.includes(id) && !(b.skillCd[id] > 0) && b.anger >= S.cost; }
     // 老板现在能不能看到办公区（在房间里 / 开局在办公室里看不到）
     canWatch() { const b = this.m.boss; return !b.room && !(b.waitT > 0); }
-    // 在老板眼里，这个员工是不是"在办公区、而且在我视野里"（猫的替身让它看起来坐在工位上）
-    visible(e) {
-      const b = this.m.boss;
-      if (e.room && e.decoyT > 0) { const s = A.seatOf(e.desk); return A.inSight(b, s.x, s.y); }
-      return !e.room && A.inSight(b, e.x, e.y);
-    }
-    // 观察：只在看得到办公区时更新，而且只看得到视野里的人
+    // 在老板眼里，这个员工是不是"在办公区、而且在我视野里"（厕所里的人算不在）
+    visible(e) { const b = this.m.boss; return !e.room && A.inSight(b, e.x, e.y); }
+    // 观察：只在看得到办公区时更新，而且只看得到视野里的人；监控期间还看得到门口附近房间里的人
     observe() {
       const m = this.m; if (!this.d.track || !this.canWatch()) return;
+      for (const r of m.peekRooms()) for (const e of m.employees()) if (e.room === r && (!this.belief[e.id] || this.belief[e.id].room !== r)) this.belief[e.id] = { room: r, since: m.time - 4 };
       for (const e of m.employees()) {
         const vis = this.visible(e), was = this.seen[e.id];
         if (vis) delete this.belief[e.id];
-        else if (was === true && e.room && !(e.decoyT > 0)) {   // 上一刻还看得到，这一刻进了门 = 亲眼看到走进哪扇门
+        else if (was === true && e.room && A.ROOMS[e.room].slack) {   // 上一刻还看得到，这一刻进了摸鱼房间的门 = 亲眼看到走进哪扇门（进厕所的不用管）
           let room = e.room;
           if (this.rnd() < this.d.wrong) { const others = A.SLACK_ROOMS.filter(r => r !== room); room = others[Math.floor(this.rnd() * others.length)]; }   // 看错了
           this.belief[e.id] = { room, since: m.time };
         }   // 走出视野 = 不知道去了哪，什么也不记
         this.seen[e.id] = vis;
+        if (e.spottedT > 0 && e.room && A.ROOMS[e.room].slack) this.belief[e.id] = { room: e.room, since: (this.belief[e.id] && this.belief[e.id].room === e.room) ? this.belief[e.id].since : m.time - 6 };   // 随机事件：被点名
       }
     }
     // 从房间里出来后：之前看到的状态作废（这段时间看不到）
@@ -75,7 +73,7 @@
     scores() {
       const m = this.m, s = {}; A.SLACK_ROOMS.forEach(r => (s[r] = 0.05));
       for (const id in this.belief) {
-        const B = this.belief[id], w = 0.4 + Math.min(1, (m.time - B.since) / 12);
+        const B = this.belief[id], w = (0.4 + Math.min(1, (m.time - B.since) / 12)) * (m.leader() && m.leader().id === id ? A.BOUNTY.mult : 1);   // 头名悬赏更值钱
         if (B.room) s[B.room] += w; else A.SLACK_ROOMS.forEach(r => (s[r] += w / A.SLACK_ROOMS.length));
       }
       return s;
@@ -93,14 +91,15 @@
       if (m.phase !== 'playing') return;
       if (b.room || b.waitT > 0) { if (!this.wasBlind) { this.wasBlind = true; } } else if (this.wasBlind) { this.wasBlind = false; this.blind(); }
       this.observe();
-      if (b.hr > 0) { this.mode = 'idle'; this.t = this.idleTime(); return; }
       if (b.freezeT > 0 || b.waitT > 0) return;   // 开局还没到 / 开会定身
       if (this.mode === 'idle') {
         this.t -= dt; this.wander -= dt;
-        if (!b.path.length && this.wander <= 0) { const p = this.officePoint(); if (p) m.pathTo(b, p.x, p.y); this.wander = 1 + this.rnd() * 2; }
+        const bag = (m.bags || []).filter(g => A.inSight(b, g.x, g.y)).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))[0];
+        if (bag && this.bagT !== m.time) { m.pathTo(b, bag.x, bag.y); this.wander = 1.5; this.bagT = m.time; }   // 2.5.0：老板也抢红包
+        else if (!b.path.length && this.wander <= 0) { const p = this.officePoint(); if (p) m.pathTo(b, p.x, p.y); this.wander = 1 + this.rnd() * 2; }
         const s = this.d.track ? this.scores() : null, hot = s && Math.max(...A.SLACK_ROOMS.map(r => s[r])) >= 1.2;
         if (this.t > 0 && !(hot && this.level === 'hard')) return;   // 困难：看准了就立刻出手
-        if (b.offense > this.d.calm && this.rnd() < this.d.calmP && !(hot && b.offense < 85)) { this.t = 2 + this.rnd() * 2; return; }   // 怨气太大，先缓缓（看准有人时例外）
+        if (this.d.calmP && b.anger < A.BOSS.emptyAnger + 5 && !hot && this.rnd() < this.d.calmP) { this.t = 1.5 + this.rnd() * 2; return; }   // 怒气见底、心里没底：先缓缓，查空会再扣怒气
         const missing = Object.keys(this.belief).length + (this.d.track ? m.employees().filter(e => !this.visible(e)).length * 0.5 : 0);   // 看不见的人可能在摸鱼
         if (this.can('meeting') && (this.d.track ? missing >= 2 && this.rnd() < 0.5 : this.rnd() < 0.2) && m.useBossSkill('meeting')) { this.t = 1; return; }
         let open = A.SLACK_ROOMS.filter(id => !m.entryBlock(b, id));
@@ -110,14 +109,8 @@
         }
         if (!open.length && this.can('raid') && m.useBossSkill('raid')) open = A.SLACK_ROOMS.filter(id => !m.entryBlock(b, id));
         if (!open.length) { this.t = 1; return; }
-        if (open.length > 1 && this.can('peek') && (this.d.track ? (!s || Math.max(...open.map(r => s[r])) < 0.8) : this.rnd() < 0.6)) {   // 拿不准：先监控一间
-          const r = this.d.track ? this.pick(open) : open[Math.floor(this.rnd() * open.length)];
-          if (m.useBossSkill('peek', r)) {
-            const n = m.employees().filter(e => e.room === r).length;   // 监控：合法地看到房间里面
-            if (n) { open = [r]; m.employees().filter(e => e.room === r).forEach(e => (this.belief[e.id] = { room: r, since: Math.min(m.time, (this.belief[e.id] || {}).since || m.time) })); }
-            else { open = open.filter(x => x !== r); this.checked(r); }
-          }
-        }
+        // 2.5.0 监控：拿不准时开监控再出发，走到门口看一眼，没人就不进（见 go 模式）
+        if (this.can('peek') && (this.d.track ? (!s || Math.max(...open.map(r => s[r])) < 0.8) : this.rnd() < 0.6)) m.useBossSkill('peek');
         this.target = this.pick(open);
         const sc = s ? s[this.target] : 0;
         if (this.can('fine') && (this.d.track ? sc >= 1.5 : b.anger >= 70)) m.useBossSkill('fine');
@@ -127,6 +120,9 @@
       }
       if (this.mode === 'go') {
         if (b.room === this.target) { this.checked(this.target); this.mode = 'inspect'; return; }
+        if (b.peek && m.peekRooms().includes(this.target) && !m.employees().some(e => e.room === this.target)) {   // 监控看到里面没人：不进去白跑，换一间
+          this.checked(this.target); b.path = []; this.mode = 'idle'; this.t = 0.2; return;
+        }
         if (m.locks[this.target]) { b.path = []; this.mode = 'idle'; this.t = 0.5; return; }   // 门被锁了，换一个
         if (!b.path.length) { this.mode = 'idle'; this.t = 0.5; }
         return;
