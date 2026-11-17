@@ -9,13 +9,13 @@
     first: 25, every: 30, max: 3, pick: 2, range: 0.6,
     items: {
       takeout: { name: '外卖', w: 3, cash: 30, desc: '口袋 +$30' },
-      double:  { name: '双倍卡', w: 2, dur: 20, desc: '20 秒内收入 ×2' },
+      double:  { name: '双倍卡', w: 2, dur: 20, desc: '20s 收入 ×2' },
       leave:   { name: '请假条', w: 2, desc: '下次被抓免罚' },
       manual:  { name: '培训手册', w: 2, desc: '技能立刻升 1 级' },
-      seal:    { name: '工位封条', w: 2, held: true, dur: 8, desc: '锁住存款最多的对手的工位 8 秒' },
-      banana:  { name: '香蕉皮', w: 2, held: true, slip: 2, life: 40, desc: '丢在脚下，谁踩到谁滑倒 2 秒（老板也会）' },
-      fake:    { name: '假消息', w: 1.5, held: true, desc: '让一个正在摸鱼的对手以为老板来了' },
-      steal:   { name: '抢功劳', w: 1.5, held: true, cut: 0.2, desc: '下一个存钱的对手分你 20%' },
+      seal:    { name: '工位封条', w: 2, held: true, dur: 8, desc: '锁第一名工位 8s' },
+      banana:  { name: '香蕉皮', w: 2, held: true, slip: 2, life: 40, desc: '谁踩谁滑倒 2s' },
+      fake:    { name: '假消息', w: 1.5, held: true, desc: '吓对手：老板来了！' },
+      steal:   { name: '抢功劳', w: 1.5, held: true, cut: 0.2, desc: '下个存钱的分你 20%' },
     },
   };
   A.SUPPLY_IDS = Object.keys(A.SUPPLY.items);

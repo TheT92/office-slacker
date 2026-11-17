@@ -150,7 +150,7 @@ test('画面：标题、办公区全图、房间视角（外面变暗、只画�
   assert.ok(texts.includes('我的工位') && texts.some(t => /^回工位/.test(t)) && !texts.includes('存款排行'), '竖屏版不显示实时排行');
   const p = m.player; enter(m, p, 'print'); texts.length = 0; r.draw(0.016);
   assert.strictEqual(r.cam.room, 'print'); assert.ok(r.cam.s > A.VIEW.TS, '房间视角放大');
-  assert.ok(texts.includes('在打印室摸鱼') && texts.some(t => /^还要待 \d 秒$/.test(t)) && texts.some(t => /^至少再待 \d 秒$/.test(t)));
+  assert.ok(texts.includes('打印室摸鱼') && texts.some(t => /^再待 \ds$/.test(t)) && texts.some(t => /^至少 \ds$/.test(t)));
   assert.ok(!texts.includes('兔子') && !texts.includes('老板'), '房间外的人不画');
   const w = r.toWorld(r.sx(3.5), r.sy(2.5)); assert.ok(Math.abs(w.x - 3.5) < 1e-9 && Math.abs(w.y - 2.5) < 1e-9);
   app.pause(); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('重新开始'));

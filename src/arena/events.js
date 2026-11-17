@@ -10,20 +10,20 @@
   A.EVENT_GLOBAL = {
     tea:      { name: '下午茶', good: true, dur: 15, desc: '茶水间收入 ×2' },
     sunset:   { name: '天台晚霞', good: true, dur: 15, desc: '天台收入 ×2' },
-    redpack:  { name: '发红包', good: true, desc: '办公区掉了 3 个红包，先到先得（每个 +$30，老板也会抢）', count: 3, cash: 30 },
-    call:     { name: '老板接电话', good: true, dur: 5, desc: '老板原地打电话 5 秒，动不了' },
-    jam:      { name: '打印机卡纸', good: false, dur: 15, desc: '打印室关闭 15 秒，里面的人被请出来' },
-    inspect:  { name: '领导视察', good: false, dur: 10, desc: '老板移动 +30%（10 秒）' },
-    blackout: { name: '停电', good: false, dur: 8, desc: '所有人视野缩小（8 秒）', sight: 0.6 },
+    redpack:  { name: '发红包', good: true, desc: '地上掉 3 个红包，各 $30', count: 3, cash: 30 },
+    call:     { name: '老板接电话', good: true, dur: 5, desc: '老板定身 5s' },
+    jam:      { name: '打印机卡纸', good: false, dur: 15, desc: '打印室关 15s' },
+    inspect:  { name: '领导视察', good: false, dur: 10, desc: '老板移速 +30%，10s' },
+    blackout: { name: '停电', good: false, dur: 8, desc: '视野变小 8s', sight: 0.6 },
   };
   // 个人事件：随机落在某个员工身上
   A.EVENT_PERSONAL = {
     raise:   { name: '老板夸你', good: true, desc: '存款 +$40', cash: 40 },
-    coffee:  { name: '咖啡因', good: true, dur: 10, desc: '移动 +30%（10 秒）', mult: 1.3 },
+    coffee:  { name: '咖啡因', good: true, dur: 10, desc: '移速 +30%，10s', mult: 1.3 },
     inspire: { name: '灵感爆发', good: true, desc: '下一次存钱 ×1.5', mult: 1.5 },
-    upgrade: { name: '系统升级', good: false, dur: 10, desc: '工位锁住 10 秒，存不了钱' },
-    spotted: { name: '被点名', good: false, dur: 6, desc: '老板 6 秒内知道你在哪' },
-    cramp:   { name: '腿抽筋', good: false, dur: 6, desc: '移动 −40%（6 秒）' },
+    upgrade: { name: '系统升级', good: false, dur: 10, desc: '工位锁 10s' },
+    spotted: { name: '被点名', good: false, dur: 6, desc: '老板看得到你 6s' },
+    cramp:   { name: '腿抽筋', good: false, dur: 6, desc: '移速 −40%，6s' },
     crash:   { name: '电脑死机', good: false, desc: '技能冷却 +10 秒', cd: 10 },
   };
   const ids = o => Object.keys(o);

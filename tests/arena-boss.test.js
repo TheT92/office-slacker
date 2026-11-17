@@ -111,7 +111,7 @@ test('画面：老板红名牌（查房！）、门上"老板在里面"、结算
   const texts = [], ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)) }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
   const app = new A.App({ prep: 0, rng: mulberry32(4), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', playerDesk: 0, bossAI: false, employeeAI: false, time: 60 } }), r = new A.Renderer({ width: 960, height: 540, getContext: () => ctx }, app);
   const m = app.start(); bossInto(m, 'pantry'); const po = m.grid.outside('pantry'); m.player.x = po.x + 2; m.player.y = po.y; texts.length = 0; r.draw(0.016);   // 站到茶水间门口附近（门在视野里）
-  assert.ok(texts.includes('老板 · 查房！') && texts.includes('老板在里面') && !texts.includes('老板冒犯值'), '员工看不到冒犯值');
+  assert.ok(texts.includes('老板 查房!') && texts.includes('老板!') && !texts.includes('老板冒犯值'), '员工看不到冒犯值');
   m.boss.stay = 0; const o = m.grid.outside('pantry'); m.pathTo(m.boss, o.x, o.y); tick(m, 4);
   enter(m, m.player, 'print'); m.boss.cooldowns.print = 0; bossInto(m, 'print'); texts.length = 0; r.draw(0.016);
   for (let i = 0; i < 60 * 70; i++) m.update(1 / 60); r.draw(0.016); r.draw(3); texts.length = 0; r.draw(0.016);   // 结算逐行揭晓，先让动画走完
@@ -122,10 +122,10 @@ test('在房间里看不到外面：门上的"老板在里面"、别的房间满
   const texts = [], ctx = new Proxy({ measureText: t => ({ width: String(t).length * 8 }), fillText: t => texts.push(String(t)) }, { get: (t, k) => (k in t ? t[k] : () => {}), set: (t, k, v) => ((t[k] = v), true) });
   const app = new A.App({ prep: 0, rng: mulberry32(8), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', playerDesk: 2, bossAI: false, employeeAI: false } }), r = new A.Renderer({ width: 960, height: 540, getContext: () => ctx }, app);
   const m = app.start(); bossInto(m, 'pantry'); const po = m.grid.outside('pantry'); m.player.x = po.x + 2; m.player.y = po.y;
-  texts.length = 0; r.draw(0.016); assert.ok(texts.includes('老板在里面'), '在办公区、门在视野里能看到');
-  m.player.x = m.grid.outside('toilet').x - 1; texts.length = 0; r.draw(0.016); assert.ok(!texts.includes('老板在里面'), '门不在视野里就看不到');
+  texts.length = 0; r.draw(0.016); assert.ok(texts.includes('老板!'), '在办公区、门在视野里能看到');
+  m.player.x = m.grid.outside('toilet').x - 1; texts.length = 0; r.draw(0.016); assert.ok(!texts.includes('老板!'), '门不在视野里就看不到');
   enter(m, m.player, 'rooftop'); texts.length = 0; r.draw(0.016);
-  assert.ok(!texts.includes('老板在里面') && !texts.includes('满了') && texts.includes('在天台摸鱼'));
+  assert.ok(!texts.includes('老板!') && !texts.includes('满了') && texts.includes('天台摸鱼'));
 });
 
 test('连摸途中被抓：按比例没收整个口袋，连摸加成清零', () => {
@@ -146,4 +146,12 @@ test('玩家当老板：开局"老板还在路上"用完全不透明的底色盖
   const after = texts.slice(texts.indexOf('老板还在路上'));
   m.employees().forEach(e => assert.ok(!after.includes(e.name), '盖住以后不再画员工名字：' + e.name));
   assert.ok(!texts.includes('+$5'), '飘字不画');
+});
+
+test('老板底薪：到公司后无论在办公区、房间里还是被定身都按 A.BOSS.wage 每秒涨收益；没到公司不涨', () => {
+  const m = mk({ bossWait: 3, playerRole: 'employee' }), b = m.boss;
+  tick(m, 2); assert.strictEqual(b.stats.score, 0, '还没到公司');
+  tick(m, 2); const s0 = b.stats.score; assert.ok(s0 > 0 && s0 < A.BOSS.wage * 1.1);
+  b.freezeT = 5; tick(m, 4); assert.ok(Math.abs(b.stats.score - s0 - A.BOSS.wage * 4) < 1e-6, '定身也涨');
+  assert.ok(Math.abs(b.stats.wage - b.stats.score) < 1e-6, '没抓人时收益全是底薪');
 });

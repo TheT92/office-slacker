@@ -172,9 +172,10 @@
 
     // —— 每帧推进 ——
     // 准备好了：剩余准备时间缩到倒数 3 秒
-    ready() { if (this.phase === 'prep') this.prepLeft = Math.min(this.prepLeft, A.PREP.countdown); }
+    ready() { if (this.phase === 'prep') { this.readied = true; if (this.prepLeft > A.PREP.countdown) { this.prepLeft = A.PREP.countdown; this.emit({ type: 'countdown', n: A.PREP.countdown }); } } }
     update(dt) {
       if (this.phase === 'prep') {
+        if (!A.PREP.auto && !this.readied && this.prepLeft > A.PREP.countdown) return;   // 不自动开局：等玩家确认
         const before = Math.ceil(this.prepLeft); this.prepLeft = Math.max(0, this.prepLeft - dt);
         if (this.prepLeft <= A.PREP.countdown && Math.ceil(this.prepLeft) < before && this.prepLeft > 0) this.emit({ type: 'countdown', n: Math.ceil(this.prepLeft) });
         if (this.prepLeft <= 0) { this.phase = 'playing'; this.emit({ type: 'go' }); }
@@ -184,6 +185,7 @@
       this.time += dt; this.left = Math.max(0, this.left - dt);
       if (!this.rush && this.left <= A.RUSH.time) { this.rush = true; this.emit({ type: 'rush' }); }   // 下班冲刺
       this.updateSkills(dt); this.updateEvents(dt);
+      if (!(this.boss.waitT > 0)) { const w = A.BOSS.wage * dt; this.boss.stats.score += w; this.boss.stats.wage = (this.boss.stats.wage || 0) + w; }   // 老板底薪：到公司后一直涨
       if (this.bossAI) this.bossAI.think(dt);
       for (const ai of this.empAI) ai.think(dt);
       for (const r of A.SLACK_ROOMS) if (!this.employees().some(e => e.room === r)) this.lureIdle[r] += dt;

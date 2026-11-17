@@ -3,6 +3,7 @@ const test = require('node:test'), assert = require('node:assert');
 const { OS, mulberry32 } = require('./helper');
 ['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/events', 'arena/match', 'render/theme', 'render/sprites', 'arena/app', 'arena/render'].forEach(m => require('../src/' + m + '.js'));
 const A = OS.arena;
+A.BOSS.wage = 0;   // 2.6.1 老板底薪：这些用例只核对抓人 / 红包收益，底薪单独在 arena-boss 里测
 const tick = (m, sec, dt = 1 / 60) => { for (let t = 0; t < sec - 1e-9; t += dt) m.update(dt); };
 const quiet = o => { const m = new A.Match(Object.assign({ bossWait: 0, rng: mulberry32(41), playerRole: 'employee', playerChar: 'rabbit', playerDesk: 0, bossAI: false, employeeAI: false }, o)); m.supplyT = 1e9; return m; };
 function enter(m, a, id) { const c = m.grid.roomCells(id)[0]; assert.ok(m.moveTo(a, c.c + 0.5, c.r + 0.5)); for (let i = 0; i < 1500 && a.room !== id; i++) m.update(1 / 60); assert.strictEqual(a.room, id); }
@@ -16,7 +17,8 @@ test('准备阶段：谁都不能动、时间不走；最后 3 秒倒数；结�
   const m = quiet({ prep: 20, playerRole: 'boss' }), b = m.boss;
   assert.strictEqual(m.phase, 'prep'); assert.strictEqual(m.moveTo(b, 12, 7), false);
   tick(m, 10); assert.strictEqual(m.time, 0); assert.strictEqual(m.left, A.ECON.matchTime); assert.strictEqual(m.offer, null); assert.ok(Math.abs(b.anger) < 1e-9);
-  const ev = []; for (let i = 0; i < 60 * 10.2; i++) { m.update(1 / 60); ev.push(...m.drainEvents()); }
+  tick(m, 60); assert.strictEqual(m.phase, 'prep', '2.6.3：不自动开局，一直等玩家确认'); assert.strictEqual(m.prepLeft, 20);
+  const ev = []; m.ready(); ev.push(...m.drainEvents()); for (let i = 0; i < 60 * 3.2; i++) { m.update(1 / 60); ev.push(...m.drainEvents()); }
   assert.deepStrictEqual(ev.filter(e => e.type === 'countdown').map(e => e.n), [3, 2, 1]);
   assert.ok(ev.some(e => e.type === 'go')); assert.strictEqual(m.phase, 'playing'); assert.ok(m.offer, '开局后才弹选技能');
   assert.ok(m.moveTo(b, 12, 7));
@@ -27,7 +29,7 @@ test('"准备好了"：剩余准备时间缩到 3 秒；倒数阶段再按没变
   tick(m, 1); m.ready(); assert.ok(m.prepLeft < 2.1); tick(m, 2.1); assert.strictEqual(m.phase, 'playing');
   const app = new A.App({ rng: mulberry32(1), matchOpts: { bossWait: 0, playerRole: 'employee' } }); app.start();
   assert.strictEqual(app.match.phase, 'prep'); assert.strictEqual(app.match.prepLeft, A.PREP.time);
-  app.tick(0.25); assert.ok(app.match.prepLeft < A.PREP.time, '准备阶段也在倒计时');
+  app.tick(0.25); assert.strictEqual(app.match.prepLeft, A.PREP.time, '不自动开局：没点准备好了就不倒计时');
   assert.strictEqual(app.act(), false, '准备阶段不能操作'); assert.ok(app.ready()); assert.strictEqual(app.match.prepLeft, 3);
   assert.ok(A.PREP.time >= A.PREP.min && A.PREP.time <= A.PREP.max);
 });
@@ -86,12 +88,12 @@ test('画面：员工/老板身份卡、倒数、下班冲刺标签、暂停菜�
   const texts = [], canvas = fakeCanvas(texts);
   const app = new A.App({ rng: mulberry32(3), matchOpts: { bossWait: 0, playerRole: 'employee', playerChar: 'owl', employeeAI: false, bossAI: false, time: 40 } }), r = new A.Renderer(canvas, app);
   const m = app.start(); texts.length = 0; r.draw(0.016);
-  assert.ok(texts.includes('你是员工') && texts.some(t => /^猫头鹰 · 工位 \d$/.test(t)) && texts.some(t => /^准备好了/.test(t)) && texts.includes('我的工位') && texts.some(t => /^技能：夜视/.test(t)) && texts.some(t => /^被动 · 眼尖/.test(t)));
-  assert.ok(texts.some(t => /^20 秒后自动开始$/.test(t)) && ['打印室', '茶水间', '天台', '厕所'].every(n => texts.includes(n)), '小地图标出四个房间');
+  assert.ok(texts.includes('你是员工') && texts.includes('猫头鹰') && texts.some(t => /^工位 \d$/.test(t)) && texts.some(t => /^准备好了/.test(t)) && texts.includes('我的工位') && texts.some(t => /^技能：夜视/.test(t)) && texts.some(t => /^被动 眼尖/.test(t)));
+  assert.ok(!texts.some(t => /自动开始/.test(t)) && ['打印室', '茶水间', '天台', '厕所'].every(n => texts.includes(n)), '小地图标出四个房间');
   app.ready(); app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('3') && !texts.some(t => /^准备好了/.test(t)));
   for (let i = 0; i < 20; i++) app.tick(0.25);
   assert.strictEqual(m.phase, 'playing'); r.banner('开始摸鱼！'); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('开始摸鱼！') && !texts.includes('你是员工'));
-  for (let i = 0; i < 45; i++) app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('冲刺 · 收入 ×2'));
+  for (let i = 0; i < 45; i++) app.tick(0.25); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('冲刺 收入×2'));
   app.pause(); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('查看身份卡'));
   assert.ok(app.toggleCard()); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('你是员工') && texts.includes('点任意位置关闭'));
   app.resume(); assert.strictEqual(app.cardOpen, false);
@@ -100,7 +102,7 @@ test('画面：员工/老板身份卡、倒数、下班冲刺标签、暂停菜�
   r.draw(3); texts.length = 0; r.draw(0.016); assert.ok(texts.includes('打印狂人') && texts.some(t => /^查房 \d+ 次/.test(t)));
   const appB = new A.App({ rng: mulberry32(3), matchOpts: { bossWait: 0, playerRole: 'boss', employeeAI: false } }), rB = new A.Renderer(canvas, appB);
   appB.start(); texts.length = 0; rB.draw(0.016);
-  assert.ok(texts.includes('你是老板') && texts.includes('狮子老板') && texts.includes('★') && texts.some(t => /用怒气释放/.test(t)));
+  assert.ok(texts.includes('你是老板') && texts.includes('狮子老板') && texts.includes('★') && texts.some(t => /耗怒气/.test(t)));
 });
 
 test('老板开局：先等 5 秒（不在地图上、不能动、不能放技能、看不见外面），然后直接出现在办公区正中间', () => {

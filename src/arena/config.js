@@ -71,7 +71,7 @@
     matchTime: 240,     // 一局 4 分钟
   };
   // 老板（2.2.0 取消冒犯值和 HR 约谈）：查空房直接扣 15 点怒气（怒气是放技能的资源）
-  A.BOSS = { emptyAnger: 15, idleMin: 2.5, idleMax: 6 };
+  A.BOSS = { emptyAnger: 15, idleMin: 2.5, idleMax: 6, wage: 0.6 };   // wage：老板底薪（$/秒，到公司后无论在哪都涨，直接算进收益；2.6.1）
   // 连摸加成：不回工位连续进第 N 个房间，存钱时整个口袋 ×(1 + 0.2 × (N − 1))，最多 ×1.8；被抓清零
   A.COMBO = { step: 0.2, max: 1.8 };
   A.comboMult = n => Math.min(A.COMBO.max, 1 + A.COMBO.step * Math.max(0, n - 1));
@@ -82,7 +82,7 @@
   // 结算称号门槛（2.0.0 按模拟中位数设定）
   A.AWARDS = { print: 42, rooftop: 60, combo: 1.4, caught: 9, picks: 3, bossCatches: 24, bossEmpty: 6 };
   A.BOUNTY = { min: 50, mult: 1.25 };   // 头名悬赏（2.2.0 B2）：存款第一且至少 $50 的员工头上戴皇冠，老板抓到他收益 ×1.25（计划是 ×1.5，模拟后老板太强，降到 ×1.25）
-  A.PREP = { time: 20, min: 15, max: 30, countdown: 3 };   // 开局准备：读身份卡（默认 20 秒，可配 15–30），最后 3 秒倒数
+  A.PREP = { time: 20, min: 15, max: 30, countdown: 3, auto: false };   // auto：倒计时结束自动开局（2.6.3 单人版关掉，要玩家点「准备好了」）   // 开局准备：读身份卡（默认 20 秒，可配 15–30），最后 3 秒倒数
   A.RUSH = { time: 30, income: 2, bossSpeed: 1.3 };        // 下班冲刺：最后 30 秒员工收入 ×2、老板移动 ×1.3
   A.PENALTY = { base: 0.2, span: 0.8, stun: 0 };   // 没收比例 = 20% + 80% × 已待时间 / 最长停留；1.7.1 起不罚站，被抓立刻自动出门（老板还在逗留、看不到外面，不知道他去了哪）
   A.MOVE = { employee: 4, boss: 3.6, stairs: 0.45, radius: 0.3 };   // 速度（格/秒）；楼梯速度倍率；碰撞半径

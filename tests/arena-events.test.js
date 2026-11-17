@@ -3,6 +3,7 @@ const test = require('node:test'), assert = require('node:assert');
 const { OS, mulberry32 } = require('./helper');
 ['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/events', 'arena/match'].forEach(m => require('../src/' + m + '.js'));
 const A = OS.arena;
+A.BOSS.wage = 0;   // 2.6.1 老板底薪：这些用例只核对抓人 / 红包收益，底薪单独在 arena-boss 里测
 const tick = (m, sec, dt = 1 / 60) => { for (let t = 0; t < sec - 1e-9; t += dt) m.update(dt); };
 const quiet = o => { const m = new A.Match(Object.assign({ bossWait: 0, rng: mulberry32(41), playerRole: 'employee', playerChar: 'rabbit', playerDesk: 0, bossAI: false, employeeAI: false, noBossSkills: true }, o)); m.supplyT = 1e9; return m; };
 function enter(m, a, id) { const c = m.grid.roomCells(id)[0]; assert.ok(m.moveTo(a, c.c + 0.5, c.r + 0.5), '能走去 ' + id); for (let i = 0; i < 1500 && a.room !== id; i++) m.update(1 / 60); assert.strictEqual(a.room, id); }
@@ -93,7 +94,7 @@ test('画面：事件大卡片、事件标签、红包、香蕉皮、皇冠、�
   const list = m.fireEvents({ global: 'redpack', personal: ['raise'], who: [p.id] }); r.showEvents(list); m.bananas.push({ x: p.x + 1, y: p.y, by: 'x', t: 30, age: 5 });
   texts.length = 0; r.draw(0.016);
   assert.ok(texts.includes('全体') && texts.includes('你') && texts.some(t => /^发红包：/.test(t)) && texts.some(t => /^老板夸你：/.test(t)), '事件卡片');
-  assert.ok(texts.includes('悬赏中 · 第 1 名'), '名次 + 悬赏'); assert.ok(texts.includes('$30'), '红包'); assert.ok(texts.includes('蕉') && texts.includes('香蕉'), '道具格');
+  assert.ok(texts.includes('悬赏 第1名'), '名次 + 悬赏'); assert.ok(texts.includes('$30'), '红包'); assert.ok(texts.includes('蕉') && texts.includes('香蕉'), '道具格');
   m.fireEvents({ global: 'tea', personal: [] }); m.eventT = 2; m.eventPreviewed = true; texts.length = 0; r.draw(0.016);
   assert.ok(texts.some(t => /^下午茶 \d+s$/.test(t)) && texts.some(t => /^随机事件 \d…$/.test(t)), '顶部事件标签');
 });

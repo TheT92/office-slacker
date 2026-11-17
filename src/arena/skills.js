@@ -9,12 +9,12 @@
   A.PHASE = { count: 3, len: 80, pickTime: 10, offer: 3 };   // 每 80 秒一个阶段，阶段开始时从随机 3 个技能里选 1 个（10 秒不选就随机）
   A.BOSS_SKILLS = {
     // 2.5.0 加强：冲刺更久更快；监控改为"6 秒内走近哪个房间就能看到里面"；回马枪窗口更长、每阶段 2 次；突击检查更便宜并额外 +10% 没收；临时会议自己只定身 1 秒；加倍罚款更狠
-    dash:    { name: '冲刺', cost: 20, cd: 12, dur: 6, mult: 1.8, desc: '6 秒内移动 ×1.8' },
-    peek:    { name: '监控', cost: 20, cd: 18, dur: 6, range: 4, desc: '6 秒内，走到哪个房间门口（4 格内）就能看到里面有谁' },
-    revisit: { name: '回马枪', cost: 30, cd: 0, window: 15, perPhase: 2, desc: '刚离开的房间无视冷却再查一次（离开后 15 秒内，每阶段 2 次）' },
-    raid:    { name: '突击检查', cost: 25, cd: 20, extra: 0.1, desc: '下一次查房不用逗留、无视冷却，抓到的人没收比例 +10%' },
-    meeting: { name: '临时会议', cost: 35, cd: 30, dur: 10, immune: 5, freeze: 1, desc: '随机把一个正在摸鱼的人叫出房间，在门口原地开会 10 秒（他的口袋保留），自己定身 1 秒' },
-    fine:    { name: '加倍罚款', cost: 35, cd: 30, extra: 0.4, bankCut: 0.2, minPhase: 1, desc: '下一次抓人没收比例 +40%，另扣对方存款的 20%（第 2 阶段起）' },
+    dash:    { name: '冲刺', cost: 20, cd: 12, dur: 6, mult: 1.8, desc: '6s 移速 ×1.8' },
+    peek:    { name: '监控', cost: 20, cd: 18, dur: 6, range: 4, desc: '6s 内走到门口就能看到房间里' },
+    revisit: { name: '回马枪', cost: 30, cd: 0, window: 15, perPhase: 2, desc: '刚查完的房间马上再查一次' },
+    raid:    { name: '突击检查', cost: 25, cd: 20, extra: 0.1, desc: '下次查房不用等，罚款 +10%' },
+    meeting: { name: '临时会议', cost: 35, cd: 30, dur: 10, immune: 5, freeze: 1, desc: '叫一个摸鱼的人出来开会 10s' },
+    fine:    { name: '加倍罚款', cost: 35, cd: 30, extra: 0.4, bankCut: 0.2, minPhase: 1, desc: '下次抓人罚 +40%，再扣存款 20%' },
   };
   A.BOSS_SKILL_IDS = Object.keys(A.BOSS_SKILLS);
 
@@ -24,30 +24,30 @@
   A.EMP_SKILLS = {
     rabbit: { name: '插队', where: 'any', base: { cd: 20, dur: 3, mult: 1.7 },
       A: [{ dur: 5 }, { dur: 6.5 }], B: [{ cd: 12 }, { cd: 8 }], nameA: '持久冲刺', nameB: '快速冷却',
-      descA: '冲刺持续更久（5 秒 / 3 级 6.5 秒）', descB: '冷却更短（12 秒 / 3 级 8 秒）' },
+      descA: '冲刺 5s（3 级 6.5s）', descB: '冷却 12s（3 级 8s）' },
     cat:    { name: '打翻水杯', where: 'office', base: { cd: 30, dur: 8, n: 1 },
       A: [{ dur: 12 }, { dur: 16 }], B: [{ n: 2 }, { n: 3 }], nameA: '泼得更狠', nameB: '连环打翻',
-      descA: '工位锁得更久（12 秒 / 3 级 16 秒）', descB: '一次打翻 2 个工位 / 3 级 3 个' },
+      descA: '锁 12s（3 级 16s）', descB: '一次翻 2 个（3 级 3 个）' },
     bear:   { name: '堵门', where: 'room', base: { cd: 40, dur: 4, inc: 1 },   // 2.2.0 模拟后冷却 30 → 40（太强）
       A: [{ dur: 6 }, { dur: 8 }], B: [{ inc: 1.5 }, { inc: 2 }], nameA: '堵得更久', nameB: '安心摸鱼',
-      descA: '堵得更久（6 秒 / 3 级 8 秒）', descB: '堵门期间收入 ×1.5 / 3 级 ×2' },
+      descA: '堵 6s（3 级 8s）', descB: '收入 ×1.5（3 级 ×2）' },
     owl:    { name: '夜视', where: 'any', base: { cd: 20, dur: 4, range: 1.6 },
       A: [{ dur: 6 }, { dur: 8 }], B: [{ range: 2 }, { range: 2.4 }], nameA: '看得更久', nameB: '千里眼',
-      descA: '夜视更久（6 秒 / 3 级 8 秒）', descB: '看得更远（视野 ×2 / 3 级 ×2.4）' },
+      descA: '夜视 6s（3 级 8s）', descB: '视野 ×2（3 级 ×2.4）' },
   };
   A.EMP_SKILL_DESC = {
-    rabbit: '冲刺 3 秒（移动 ×1.7）；冲刺中能挤进满员的房间，把里面一个人挤出门（他的口袋保留）',
-    cat: '在办公区用：把视野里一个同事的工位锁住 8 秒，期间他没法存钱（优先锁存款最多的人）',
-    bear: '在房间里用：熊往门口一坐，4 秒内老板和其他员工都进不来（门外看不出来）',
-    owl: '4 秒内视野放大 1.6 倍；在房间里用能看到外面（老板在哪、谁往哪走）',
+    rabbit: '冲刺 3s，能挤进满员房间',
+    cat: '锁住同事工位 8s，他存不了钱',
+    bear: '房间里用：堵门 4s，谁都进不来',
+    owl: '4s 视野 ×1.6，房间里能看外面',
   };
   // 被动（2.2.0）：一直生效
   A.PASSIVES = {
     rabbit: { name: '腿长', desc: '移动速度 +10%', speed: 1.1 },
-    cat:    { name: '手快', desc: '捡补给只要 1 秒（别人 2 秒）', pick: 1 },
-    bear:   { name: '耐蹲', desc: '摸鱼房间最长停留 +20%（收入曲线一起拉长）', stay: 1.2 },
+    cat:    { name: '手快', desc: '捡补给 1s', pick: 1 },
+    bear:   { name: '耐蹲', desc: '房间多待 20%', stay: 1.2 },
     owl:    { name: '眼尖', desc: '视野 +2 格', sight: 2 },
-    boss:   { name: '居高临下', desc: '视野比员工大 2 格', sight: 2 },
+    boss:   { name: '居高临下', desc: '视野 +2 格', sight: 2 },
   };
   A.stayMult = a => (A.PASSIVES[a.id] && A.PASSIVES[a.id].stay) || 1;   // 熊：最长停留与收入曲线拉长
   // 当前等级与方向下的技能参数

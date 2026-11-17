@@ -3,6 +3,7 @@ const test = require('node:test'), assert = require('node:assert');
 const { OS, mulberry32 } = require('./helper');
 ['arena/config', 'arena/path', 'arena/bossai', 'arena/empai', 'arena/skills', 'arena/supply', 'arena/events', 'arena/match'].forEach(m => require('../src/' + m + '.js'));
 const A = OS.arena;
+A.BOSS.wage = 0;   // 2.6.1 老板底薪：这些用例只核对抓人 / 红包收益，底薪单独在 arena-boss 里测
 const tick = (m, sec, dt = 1 / 60) => { for (let t = 0; t < sec - 1e-9; t += dt) m.update(dt); };
 const quiet = o => new A.Match(Object.assign({ bossWait: 0, rng: mulberry32(21), playerRole: 'employee', playerChar: 'rabbit', playerDesk: 0, bossAI: false, employeeAI: false }, o));
 function enter(m, a, id) { const c = m.grid.roomCells(id)[0]; assert.ok(m.moveTo(a, c.c + 0.5, c.r + 0.5)); for (let i = 0; i < 1500 && a.room !== id; i++) m.update(1 / 60); assert.strictEqual(a.room, id); }
@@ -99,7 +100,7 @@ test('画面：老板视角看不见房间里的人、门牌不显示人数、�
   texts.length = 0; r.draw(0.016);
   assert.ok(texts.includes('老板（你）') && texts.includes('$0') && !texts.includes('存款排行') && texts.includes('点房间门去查房'));
   assert.ok(!texts.includes(e.name), '房间里的员工不画（排行里的名字带序号）');
-  assert.ok(texts.includes(e.name + ' · 不在'), '工位显示不在');
+  assert.ok(texts.includes(e.name + ' 不在'), '工位显示不在');
   assert.ok(!texts.some(t => /^厕所 \d\/1/.test(t)), '门牌不显示人数');
   assert.strictEqual(r.cam.room, null, '老板不切换房间视角');
   for (let i = 0; i < 60 * 250; i++) m.update(1 / 60); texts.length = 0; r.draw(0.016);
@@ -128,6 +129,6 @@ test('老板进了房间也看不到外面：切换成房间视角，别的员�
   m.moveTo(b, c.c + 0.5, c.r + 0.5); for (let i = 0; i < 2400 && b.room !== 'print'; i++) m.update(1 / 60);
   texts.length = 0; r.draw(0.016);
   assert.strictEqual(r.cam.room, 'print');
-  assert.ok(texts.includes('在打印室查房') && texts.some(t => /^职场边界感：还要待/.test(t)));
+  assert.ok(texts.includes('打印室查房') && texts.some(t => /^再待 \ds$/.test(t)));
   assert.ok(!m.employees().some(e => texts.includes(e.name)), '外面的员工不画');
 });
